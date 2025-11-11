@@ -1,0 +1,213 @@
+---
+/**
+ * Default signin page
+ * Users can override by creating their own src/pages/mona-kiosk/signin.astro
+ */
+import { ROUTES } from "../constants";
+
+// Get return URL from query params, default to portal
+const returnUrl = Astro.url.searchParams.get("return") || ROUTES.PORTAL;
+const signinEndpoint = ROUTES.AUTH_SIGNIN;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign In</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: #f9fafb;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 1rem;
+      }
+      .container {
+        background: white;
+        border-radius: 0.5rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        padding: 2rem;
+        width: 100%;
+        max-width: 400px;
+      }
+      h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #111827;
+        margin-bottom: 0.5rem;
+      }
+      p {
+        color: #6b7280;
+        margin-bottom: 1.5rem;
+        font-size: 0.875rem;
+      }
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      label {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: #374151;
+        margin-bottom: 0.25rem;
+      }
+      input[type="email"] {
+        width: 100%;
+        padding: 0.625rem 0.75rem;
+        border: 1px solid #d1d5db;
+        border-radius: 0.375rem;
+        font-size: 0.875rem;
+        transition: border-color 0.2s;
+      }
+      input[type="email"]:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+      button {
+        width: 100%;
+        padding: 0.625rem 1rem;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 0.375rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      button:hover {
+        background: #5568d3;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .error {
+        color: #dc2626;
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+        display: none;
+      }
+      .error.show {
+        display: block;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #111827;
+        }
+        .container {
+          background: #1f2937;
+        }
+        h1 {
+          color: #f9fafb;
+        }
+        p {
+          color: #9ca3af;
+        }
+        label {
+          color: #d1d5db;
+        }
+        input[type="email"] {
+          background: #374151;
+          border-color: #4b5563;
+          color: #f9fafb;
+        }
+        input[type="email"]:focus {
+          border-color: #818cf8;
+          box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.1);
+        }
+        button {
+          background: #818cf8;
+        }
+        button:hover {
+          background: #6366f1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Sign In</h1>
+      <p>Enter your email to access your purchased content.</p>
+      <p style="background: #fee; border: 2px solid #c00; padding: 1rem; border-radius: 8px; color: #c00;">⚠️ Note: This page is not secure. Use it only in sandbox mode!!!</p>
+
+      <form id="signin-form">
+        <div>
+          <label for="email">Email Address</label>
+          <input
+            type="email"
+            id="email"
+            name="email"
+            required
+            placeholder="you@example.com"
+            autocomplete="email"
+          />
+        </div>
+
+        <button type="submit" id="submit-btn">
+          Sign In
+        </button>
+
+        <div id="error" class="error"></div>
+      </form>
+    </div>
+
+    <script is:inline define:vars={{ returnUrl, signinEndpoint }}>
+      const form = document.getElementById('signin-form');
+      const emailInput = document.getElementById('email');
+      const submitBtn = document.getElementById('submit-btn');
+      const errorDiv = document.getElementById('error');
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const email = emailInput.value.trim();
+        if (!email) return;
+
+        // Disable form
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Signing in...';
+        errorDiv.classList.remove('show');
+
+        try {
+          const response = await fetch(signinEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email }),
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            // Success - redirect to return URL
+            window.location.href = returnUrl;
+          } else {
+            // Show error
+            errorDiv.textContent = data.error || 'Failed to sign in. Please try again.';
+            errorDiv.classList.add('show');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Sign In';
+          }
+        } catch (error) {
+          errorDiv.textContent = 'Network error. Please check your connection.';
+          errorDiv.classList.add('show');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Sign In';
+        }
+      });
+    </script>
+  </body>
+</html>

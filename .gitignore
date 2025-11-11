@@ -1,0 +1,6 @@
+node_modules/
+.*
+demo-mona
+KIOSK_PRODUCT_DESIGN.md
+!.gitignore
+*.tgz
