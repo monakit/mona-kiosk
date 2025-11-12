@@ -10,6 +10,14 @@ Astro integration for monetizing content with [Polar.sh](https://polar.sh). Add 
 - Paywall middleware
 - Customizable defaults
 
+### Support Us
+
+You can check out our live paywalled post: [MonaKiosk + BetterAuth Integration Guide](https://www.mymona.xyz/blogs/2025-11/astro-paywall-with-monakiosk). It provides a detailed walkthrough on integrating MonaKiosk with BetterAuth and Polar — a valuable resource for advanced users.
+
+If you’d like to support our work, consider purchasing the guide 😉.
+
+Thank you in advance for your support!
+
 ## Installation
 
 ```bash
@@ -189,10 +197,12 @@ monaKiosk({
   }],
   productNameTemplate?: string;         // E.g., "[title] - Premium"
   signinPagePath?: string;              // Default: "/mona-kiosk/signin"
-  isAuthenticated?: (context: APIContext) => boolean | Promise<boolean>;  // Custom auth check
-  checkAccess?: (context: APIContext, contentId: string) => boolean | Promise<boolean>;  // Custom access check
+  isAuthenticated?: (context: APIContext) => boolean | Promise<boolean>;  // Custom auth check (must be self-contained)
+  checkAccess?: (context: APIContext, contentId: string) => boolean | Promise<boolean>;  // Custom access check (must be self-contained)
 })
 ```
+
+> ⚠️ **Important**: Custom functions (`isAuthenticated`, `checkAccess`, `previewHandler`) must be self-contained. See [Custom Authentication & Access Control](#custom-authentication--access-control) for details.
 
 ## Customization
 
@@ -290,6 +300,35 @@ Override how MonaKiosk checks authentication and content access. Useful when int
 
 Both are optional. If not provided, MonaKiosk uses built-in session cookie validation.
 
+#### Important: Function Serialization Limitation
+
+⚠️ **Configuration functions must be self-contained** (no external imports).
+
+MonaKiosk needs to serialize these functions for the build process. Function serialization (`toString()`) only captures the function body, not external dependencies or imports.
+
+✅ **Self-contained inline functions work**
+
+```typescript
+monaKiosk({
+  isAuthenticated: (context) => {
+    // No external dependencies - works fine
+    return !!context.locals.user;
+  }
+})
+```
+
+❌ **Don't use inline functions with external dependencies**
+
+```typescript
+// ❌ This will NOT work!
+monaKiosk({
+  isAuthenticated: async (context) => {
+    const session = await getSession(context); // External import - breaks at runtime!
+    return !!session?.user;
+  }
+})
+```
+
 #### Behavior Matrix
 
 | Scenario | `isAuthenticated` | `checkAccess` | Signin Link | Paywall Shown | Full Content |
@@ -304,6 +343,88 @@ Both are optional. If not provided, MonaKiosk uses built-in session cookie valid
 monaKiosk({
   productNameTemplate: "[title] - Premium Access"  // [title] = content title
 })
+```
+
+### Middleware Order Control
+
+By default, MonaKiosk middleware runs before your custom middleware (`order: "pre"`). If you need to control the execution order, use Astro's built-in `sequence()` function.
+
+#### Default Behavior
+
+```typescript
+// astro.config.mjs - MonaKiosk auto-injects with order: "pre"
+monaKiosk({ /* config */ })
+
+// src/middleware.ts - runs AFTER MonaKiosk
+export const onRequest = (context, next) => {
+  console.log('Paywall state:', context.locals.paywall);
+  return next();
+};
+```
+
+#### Custom Order with `sequence()`
+
+To run your middleware before MonaKiosk, or for complete control over execution order:
+
+```typescript
+// astro.config.mjs - no changes needed
+monaKiosk({ /* config */ })
+
+// src/middleware.ts
+import { sequence } from "astro:middleware";
+import { onRequest as monaKioskMiddleware } from "mona-kiosk/middleware";
+
+export const onRequest = sequence(
+  async (context, next) => {
+    // 1. Your auth runs FIRST
+    context.locals.user = await getUser(context);
+    return next();
+  },
+  monaKioskMiddleware,  // 2. MonaKiosk runs SECOND
+  async (context, next) => {
+    // 3. Your logging runs THIRD
+    console.log('Paywall state:', context.locals.paywall);
+    return next();
+  }
+);
+```
+
+#### Use Cases
+
+**Pattern 1: Auth-First** (Your auth → MonaKiosk checks access)
+
+```typescript
+// src/middleware.ts
+import { sequence } from "astro:middleware";
+import { onRequest as monaKioskMiddleware } from "mona-kiosk/middleware";
+
+export const onRequest = sequence(
+  async (context, next) => {
+    // Your auth middleware runs first
+    context.locals.user = await getUser(context.cookies);
+    return next();
+  },
+  monaKioskMiddleware  // MonaKiosk can now use context.locals.user
+);
+
+// astro.config.mjs
+monaKiosk({
+  isAuthenticated: (context) => !!context.locals.user,
+  checkAccess: async (context, contentId) => {
+    return context.locals.user?.purchases?.includes(contentId);
+  }
+})
+```
+
+**Pattern 2: MonaKiosk-First** (Default - MonaKiosk handles everything)
+
+```typescript
+// astro.config.mjs - no middleware.ts needed
+monaKiosk({
+  // MonaKiosk handles auth and access checking
+})
+
+// Your pages automatically get context.locals.paywall
 ```
 
 ## API Reference
