@@ -10,6 +10,10 @@ import type {
 import { getGlobalConfig } from "../integration/config";
 import { hasPolarSession, validateCustomerAccess } from "../lib/auth";
 import { entryToContentId } from "../lib/content-id";
+import {
+  type DownloadableFile,
+  getDownloadableFiles,
+} from "../lib/downloadables";
 import { renderErrorHtml } from "../lib/error-renderer";
 import { findProductByContentId } from "../lib/polar-client";
 import {
@@ -17,6 +21,7 @@ import {
   getDefaultPaywallTemplate,
   getDefaultPreviewHandler,
   type PreviewHandler,
+  renderDownloadableSection,
   renderTemplate,
 } from "../lib/templates";
 import type { PayableEntry } from "../schemas/payable";
@@ -88,6 +93,30 @@ async function buildPreview(params: {
       title: "Preview Generation Error",
       error,
     });
+  }
+}
+
+/**
+ * Inject HTML content before closing body tag
+ */
+async function injectHtmlBeforeBodyClose(
+  response: Response,
+  content: string,
+): Promise<Response> {
+  try {
+    const html = await response.text();
+
+    // Inject before closing </body> tag
+    const modifiedHtml = html.replace("</body>", `${content}\n</body>`);
+
+    return new Response(modifiedHtml, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  } catch (error) {
+    console.error("Failed to inject HTML content:", error);
+    return response;
   }
 }
 
@@ -240,6 +269,14 @@ export interface PaywallState {
   description?: string;
   /** Preview HTML to render for users without access (includes paywall UI) */
   preview?: string;
+  /** Whether this content has downloadable files */
+  hasDownloads: boolean;
+  /** Number of downloadable files */
+  downloadCount?: number;
+  /** Downloadable files (only populated if hasAccess && hasDownloads) */
+  downloadableFiles?: DownloadableFile[];
+  /** Rendered downloadable section HTML (only if hasAccess && hasDownloads) */
+  downloadableSection?: string;
 }
 
 /**
@@ -326,6 +363,34 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
         ? contentInfo.entry.data.interval
         : undefined;
 
+    const hasDownloads = !!(
+      contentInfo.entry.data.downloads &&
+      contentInfo.entry.data.downloads.length > 0
+    );
+    const downloadCount = contentInfo.entry.data.downloads?.length || 0;
+
+    // Fetch downloadable files if user has access
+    let downloadableFiles: DownloadableFile[] | undefined;
+    let downloadableSection: string | undefined;
+
+    if (hasAccess && hasDownloads) {
+      const customerToken = cookies.get(COOKIE_NAMES.SESSION)?.value;
+      downloadableFiles = await getDownloadableFiles({
+        contentId: contentInfo.contentId,
+        customerToken,
+      });
+
+      if (downloadableFiles.length > 0) {
+        // Render downloadable section with custom or default template
+        const downloadableTemplate =
+          contentInfo.collectionConfig.downloadableTemplate;
+        downloadableSection = renderDownloadableSection({
+          files: downloadableFiles,
+          template: downloadableTemplate,
+        });
+      }
+    }
+
     locals.paywall = {
       isPayable: true,
       isAuthenticated,
@@ -338,9 +403,23 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
       title: contentInfo.entry.data.title,
       description: contentInfo.entry.data.description,
       preview: preview ?? undefined,
+      hasDownloads,
+      downloadCount,
+      downloadableFiles,
+      downloadableSection,
     } satisfies PaywallState;
 
-    // Always continue to page rendering
-    return next();
+    // Render page and inject downloadable section if needed
+    const response = await next();
+
+    // Inject downloadable section into HTML if user has access and there are downloads
+    if (
+      downloadableSection &&
+      response.headers.get("content-type")?.includes("text/html")
+    ) {
+      return injectHtmlBeforeBodyClose(response, downloadableSection);
+    }
+
+    return response;
   },
 );

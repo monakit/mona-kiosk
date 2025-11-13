@@ -2,6 +2,8 @@
 
 A modern Astro integration for monetizing your content with [Polar.sh](https://polar.sh).
 
+You can find a live showcase here: [Mona](https://www.mymona.xyz/)
+
 ## What is MonaKiosk?
 
 MonaKiosk makes it easy to add paywalls and monetization to your Astro-powered content. Whether you're selling blog posts, courses, templates, or subscriptions, MonaKiosk handles the heavy lifting so you can focus on creating great content.

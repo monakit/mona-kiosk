@@ -1,0 +1,21 @@
+{
+  "files": {
+    "/Users/hujian/Downloads/gunda-generated.jpeg": {
+      "polarFileId": "37316bc8-bd24-4955-83e3-e0e1b7cefc11",
+      "checksum": "4cce948c8fb4a1e68b211e4f6ca053a1b6a75a40a804018f55b90c5cf8bcb549",
+      "localPath": "/Users/hujian/Downloads/gunda-generated.jpeg"
+    },
+    "src/content/blog/first-post.md": {
+      "polarFileId": "2cfccc59-25ca-4ac5-ac93-0d43f78b30a5",
+      "checksum": "979f37df9c18cf711a6d28a08cff3456f30e3959d84b36b88a257e94f518f75a",
+      "localPath": "first-post.md"
+    }
+  },
+  "blog/markdown-style-guide": {
+    "contentUrl": "https://example.com/blog/markdown-style-guide",
+    "files": [
+      "/Users/hujian/Downloads/gunda-generated.jpeg",
+      "src/content/blog/first-post.md"
+    ]
+  }
+}

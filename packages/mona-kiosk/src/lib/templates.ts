@@ -33,6 +33,9 @@ export interface TemplateContext {
   isSubscription: boolean;
   interval?: string;
   billingCycle?: string;
+  hasDownloads: boolean;
+  downloadCount: number;
+  downloadInfo: string;
 }
 
 /**
@@ -187,6 +190,17 @@ const PAYWALL_STYLES = `<style>
     color: #5568d3;
     text-decoration: underline;
   }
+  .mona-kiosk-downloads-info {
+    background: #e0e7ff;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .mona-kiosk-downloads-info p {
+    margin: 0;
+    color: #3730a3;
+    font-size: 0.95rem;
+  }
   @media (prefers-color-scheme: dark) {
     .mona-kiosk-paywall {
       background: #2d3748;
@@ -211,6 +225,12 @@ const PAYWALL_STYLES = `<style>
     .mona-kiosk-signin-link:hover {
       color: #a5b4fc;
     }
+    .mona-kiosk-downloads-info {
+      background: #4c51bf;
+    }
+    .mona-kiosk-downloads-info p {
+      color: #e0e7ff;
+    }
   }
 </style>`;
 
@@ -225,6 +245,7 @@ export function getDefaultPaywallTemplate(): string {
 <div class="mona-kiosk-paywall">
   <h2>{{title}}</h2>
   <p>{{description}}</p>
+  {{downloadInfo}}
   <div class="mona-kiosk-price">{{formattedPrice}}</div>
   <p>${MESSAGE_NO_ACCESS}</p>
   <div class="mona-kiosk-actions">
@@ -348,6 +369,19 @@ export function buildTemplateContext(params: {
   <a href="${signinPagePath}" class="mona-kiosk-signin-link">${LINK_SIGNIN}</a>
   `;
 
+  // Check if content has downloads
+  const hasDownloads = !!(
+    entry.data.downloads && entry.data.downloads.length > 0
+  );
+  const downloadCount = entry.data.downloads?.length || 0;
+
+  // Build download info HTML
+  const downloadInfo = hasDownloads
+    ? `<div class="mona-kiosk-downloads-info">
+    <p><strong>✨ Includes ${downloadCount} downloadable file${downloadCount > 1 ? "s" : ""}</strong></p>
+  </div>`
+    : "";
+
   return {
     contentId,
     collection,
@@ -364,5 +398,193 @@ export function buildTemplateContext(params: {
     isSubscription,
     interval,
     billingCycle,
+    hasDownloads,
+    downloadCount,
+    downloadInfo,
   };
+}
+
+/**
+ * Downloadable file info for template rendering
+ */
+export interface DownloadableFileInfo {
+  id: string;
+  name: string;
+  size: number;
+  sizeFormatted: string;
+  mimeType: string;
+  downloadUrl: string;
+}
+
+/**
+ * Default downloadable template - floating panel with file list
+ */
+export function getDefaultDownloadableTemplate(): string {
+  return `
+<div class="mona-kiosk-downloadables-panel">
+  <div class="mona-kiosk-downloadables-header">
+    <h3>Downloadable Files</h3>
+    <button class="mona-kiosk-downloadables-close" aria-label="Close" onclick="this.closest('.mona-kiosk-downloadables-panel').style.display='none'">×</button>
+  </div>
+  <div class="mona-kiosk-downloadables-body">
+    {{fileList}}
+  </div>
+</div>
+
+<style>
+.mona-kiosk-downloadables-panel {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 320px;
+  max-width: calc(100vw - 40px);
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.mona-kiosk-downloadables-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.mona-kiosk-downloadables-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.mona-kiosk-downloadables-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.mona-kiosk-downloadables-close:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.mona-kiosk-downloadables-body {
+  padding: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.mona-kiosk-download-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 8px;
+  text-decoration: none;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.mona-kiosk-download-item:last-child {
+  margin-bottom: 0;
+}
+
+.mona-kiosk-download-item:hover {
+  background-color: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.mona-kiosk-download-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  background-color: #3b82f6;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+}
+
+.mona-kiosk-download-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: white;
+}
+
+.mona-kiosk-download-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mona-kiosk-download-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #111827;
+  margin: 0 0 4px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mona-kiosk-download-size {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0;
+}
+</style>
+`;
+}
+
+/**
+ * Render downloadable section with files
+ */
+export function renderDownloadableSection(params: {
+  files: DownloadableFileInfo[];
+  template?: string;
+}): string {
+  const { files, template } = params;
+
+  if (files.length === 0) {
+    return "";
+  }
+
+  // Render each file as a download link
+  const fileListHtml = files
+    .map(
+      (file) => `
+<a href="${file.downloadUrl}" class="mona-kiosk-download-item" download="${file.name}">
+  <div class="mona-kiosk-download-icon">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+      <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+    </svg>
+  </div>
+  <div class="mona-kiosk-download-info">
+    <p class="mona-kiosk-download-name">${file.name}</p>
+    <p class="mona-kiosk-download-size">${file.sizeFormatted}</p>
+  </div>
+</a>
+`,
+    )
+    .join("");
+
+  // Use custom template or default
+  const templateHtml = template ?? getDefaultDownloadableTemplate();
+
+  // Replace {{fileList}} with rendered files
+  return templateHtml.replace("{{fileList}}", fileListHtml);
 }
