@@ -3,7 +3,6 @@ import type { Benefit } from "@polar-sh/sdk/models/components/benefit";
 import type { ExistingProductPrice } from "@polar-sh/sdk/models/components/existingproductprice";
 import type { Product } from "@polar-sh/sdk/models/components/product";
 import type { ProductPriceFixedCreate } from "@polar-sh/sdk/models/components/productpricefixedcreate";
-import type { BenefitsListRequest } from "@polar-sh/sdk/models/operations/benefitslist.js";
 import type { ProductsListRequest } from "@polar-sh/sdk/models/operations/productslist.js";
 import { POLAR_API_PAGE_SIZE } from "../constants";
 import { getGlobalConfig } from "../integration/config";
@@ -17,8 +16,6 @@ let polarClientInstance: Polar | null = null;
 let polarClientProxy: Polar | null = null;
 const productMapping = new Map<string, string>();
 const productToContentMapping = new Map<string, string>();
-const customBenefitCache = new Map<string, string>();
-const downloadablesBenefitCache = new Map<string, string>();
 
 function assertBenefitType(
   benefit: Benefit,
@@ -275,6 +272,54 @@ function buildFixedPricePayload(
 }
 
 /**
+ * Find all benefits for a content ID
+ * Returns benefits grouped by type for efficient processing
+ */
+async function findBenefitsForContent(params: {
+  contentId: string;
+  organizationId: string;
+}): Promise<{
+  custom: Benefit | null;
+  downloadables: Benefit | null;
+}> {
+  const { contentId, organizationId } = params;
+  const polar = getPolarClient();
+
+  // Search once for all benefits with this content_id
+  const allBenefits: Benefit[] = [];
+  const candidates = generateContentIdCandidates(contentId);
+
+  for (const candidate of candidates) {
+    const iterator = await polar.benefits.list({
+      organizationId,
+      metadata: { content_id: candidate },
+      limit: POLAR_API_PAGE_SIZE,
+    });
+
+    for await (const page of iterator) {
+      const items = page.result?.items ?? [];
+      for (const item of items) {
+        if (normaliseMetadataValue(item.metadata?.content_id) === candidate) {
+          allBenefits.push(item);
+        }
+      }
+    }
+
+    // If we found any benefits, stop searching candidates
+    if (allBenefits.length > 0) {
+      break;
+    }
+  }
+
+  // Filter by type client-side
+  const custom = allBenefits.find((b) => b.type === "custom") ?? null;
+  const downloadables =
+    allBenefits.find((b) => b.type === "downloadables") ?? null;
+
+  return { custom, downloadables };
+}
+
+/**
  * Create or update custom benefit with description + URL in private note
  * This benefit provides customers with access information and content URL
  */
@@ -285,8 +330,9 @@ async function ensureCustomBenefitForContent(params: {
   title: string;
   description: string;
   contentUrl: string;
+  existingBenefit: Benefit | null;
 }): Promise<string> {
-  const { contentId, organizationId, description, contentUrl } = params;
+  const { contentId, description, contentUrl, existingBenefit } = params;
 
   const desiredMetadata = {
     content_id: params.contentId,
@@ -296,28 +342,7 @@ async function ensureCustomBenefitForContent(params: {
   const benefitDescription = params.title.substring(0, 42);
   const privateNote = `${description}\n\nAccess your content here: ${contentUrl}`;
 
-  const cached = customBenefitCache.get(contentId);
-  if (cached) {
-    return cached;
-  }
-
   const polar = getPolarClient();
-  // Note: We search without type filter first, then verify type
-  // This is because Polar API may not properly filter by type when metadata is specified
-  const candidateBenefit = await findByMetadataCandidates({
-    list: (args: BenefitsListRequest) => polar.benefits.list(args),
-    buildArgs: (candidate) => ({
-      organizationId,
-      metadata: { content_id: candidate },
-      limit: POLAR_API_PAGE_SIZE,
-    }),
-    candidates: generateContentIdCandidates(contentId),
-    getMetadataValue: (item: Benefit) => item.metadata?.content_id,
-    normalise: normaliseMetadataValue,
-    predicate: (item: Benefit) => item.type === "custom", // Filter by type client-side
-  });
-
-  const existingBenefit = candidateBenefit ?? null;
 
   if (existingBenefit) {
     assertBenefitType(existingBenefit, "custom", {
@@ -349,7 +374,6 @@ async function ensureCustomBenefitForContent(params: {
       });
     }
 
-    customBenefitCache.set(contentId, existingBenefit.id);
     return existingBenefit.id;
   }
 
@@ -362,7 +386,6 @@ async function ensureCustomBenefitForContent(params: {
     },
   });
 
-  customBenefitCache.set(contentId, created.id);
   return created.id;
 }
 
@@ -430,8 +453,9 @@ async function ensureDownloadablesBenefitForContent(params: {
   organizationId: string;
   title: string;
   fileIds: string[];
+  existingBenefit: Benefit | null;
 }): Promise<string> {
-  const { contentId, organizationId, fileIds } = params;
+  const { contentId, fileIds, existingBenefit } = params;
   const polar = getPolarClient();
   const metadata = {
     content_id: params.contentId,
@@ -440,45 +464,11 @@ async function ensureDownloadablesBenefitForContent(params: {
   };
   const benefitDescription = formatDownloadablesDescription(params.title);
 
-  const cached = downloadablesBenefitCache.get(contentId);
-  if (cached) {
-    const cachedBenefit = await polar.benefits.get({ id: cached });
-    assertBenefitType(cachedBenefit, "downloadables", {
-      contentId,
-      benefitPurpose: "serving downloadable files",
-    });
-    await updateDownloadablesBenefitIfNeeded(cachedBenefit, {
-      fileIds,
-      metadata,
-      description: benefitDescription,
-    });
-    return cached;
-  }
-
-  // Try to find existing downloadables benefit
-  // Note: We search without type filter first, then verify type
-  // This is because Polar API may not properly filter by type when metadata is specified
-  const candidateBenefit = await findByMetadataCandidates({
-    list: (args: BenefitsListRequest) => polar.benefits.list(args),
-    buildArgs: (candidate) => ({
-      organizationId,
-      metadata: { content_id: candidate },
-      limit: POLAR_API_PAGE_SIZE,
-    }),
-    candidates: generateContentIdCandidates(contentId),
-    getMetadataValue: (item: Benefit) => item.metadata?.content_id,
-    normalise: normaliseMetadataValue,
-    predicate: (item: Benefit) => item.type === "downloadables", // Filter by type client-side
-  });
-
-  const existingBenefit = candidateBenefit ?? null;
-
   if (existingBenefit) {
     assertBenefitType(existingBenefit, "downloadables", {
       contentId,
       benefitPurpose: "serving downloadable files",
     });
-    downloadablesBenefitCache.set(contentId, existingBenefit.id);
     await updateDownloadablesBenefitIfNeeded(existingBenefit, {
       fileIds,
       metadata,
@@ -497,7 +487,6 @@ async function ensureDownloadablesBenefitForContent(params: {
     },
   });
 
-  downloadablesBenefitCache.set(contentId, created.id);
   return created.id;
 }
 
@@ -684,6 +673,12 @@ export async function upsertProduct(data: {
     }
   }
 
+  // Find all existing benefits for this content (single search)
+  const existingBenefits = await findBenefitsForContent({
+    contentId: data.contentId,
+    organizationId,
+  });
+
   // Create custom benefit (always)
   const customBenefitId = await ensureCustomBenefitForContent({
     contentId: data.contentId,
@@ -692,6 +687,7 @@ export async function upsertProduct(data: {
     title: data.name,
     description: data.description,
     contentUrl: data.contentUrl,
+    existingBenefit: existingBenefits.custom,
   });
 
   // Create downloadables benefit (if files exist)
@@ -703,6 +699,7 @@ export async function upsertProduct(data: {
       organizationId,
       title: data.name,
       fileIds: data.fileIds,
+      existingBenefit: existingBenefits.downloadables,
     });
     benefitIds.push(downloadablesBenefitId);
   }
