@@ -10,7 +10,6 @@ import {
   findFileByChecksum,
   normalizeFileKey,
   readStateFile,
-  setContentFilesInState,
   updateFileInState,
   writeStateFile,
 } from "../lib/state-manager.js";
@@ -80,20 +79,16 @@ export async function uploadDownloadables(): Promise<void> {
             frontmatterSlug: payableData.slug,
           });
 
-          const contentUrl = `${config.siteUrl}/${canonicalId}`;
           const contentDir = dirname(filePath);
 
-          // Sync empty downloads -> removes stale links but keeps uploaded files
+          // Skip if no downloads declared
           if (!payableData.downloads || payableData.downloads.length === 0) {
-            setContentFilesInState(state, canonicalId, contentUrl, []);
-            await writeStateFile(state);
             continue;
           }
 
           console.log(`📄 Processing: ${canonicalId}`);
 
           // Process each download
-          const fileKeys: string[] = [];
           for (const download of payableData.downloads) {
             const absoluteFilePath = resolve(contentDir, download.file);
             const filename = download.title;
@@ -110,37 +105,27 @@ export async function uploadDownloadables(): Promise<void> {
             if (cachedFile && cachedFile.checksum === currentChecksum) {
               console.log(`  ✓ Skipped (unchanged): ${filename}`);
               totalSkipped++;
-              const recordedKey = updateFileInState(
-                state,
-                canonicalId,
-                contentUrl,
-                fileKey,
-                {
-                  ...cachedFile,
-                  localPath: download.file,
-                },
-              );
-              fileKeys.push(recordedKey);
+              updateFileInState(state, fileKey, {
+                ...cachedFile,
+                localPath: download.file,
+              });
               await writeStateFile(state);
               continue;
             }
 
-            const duplicate = findFileByChecksum(state, currentChecksum, fileKey);
+            const duplicate = findFileByChecksum(
+              state,
+              currentChecksum,
+              fileKey,
+            );
             if (duplicate) {
               console.log(
                 `  ♻️ Reusing existing upload (${filename}) from ${duplicate.key}`,
               );
-              const recordedKey = updateFileInState(
-                state,
-                canonicalId,
-                contentUrl,
-                fileKey,
-                {
-                  ...duplicate.entry,
-                  localPath: download.file,
-                },
-              );
-              fileKeys.push(recordedKey);
+              updateFileInState(state, fileKey, {
+                ...duplicate.entry,
+                localPath: download.file,
+              });
               totalReused++;
               await writeStateFile(state);
               continue;
@@ -153,26 +138,16 @@ export async function uploadDownloadables(): Promise<void> {
             });
 
             // Update state
-            const recordedKey = updateFileInState(
-              state,
-              canonicalId,
-              contentUrl,
-              fileKey,
-              {
-                polarFileId: fileId,
-                checksum: currentChecksum,
-                localPath: download.file,
-              },
-            );
-            fileKeys.push(recordedKey);
+            updateFileInState(state, fileKey, {
+              polarFileId: fileId,
+              checksum: currentChecksum,
+              localPath: download.file,
+            });
             await writeStateFile(state);
 
             console.log(`  ✅ Uploaded: ${filename} → ${fileId}`);
             totalUploaded++;
           }
-
-          setContentFilesInState(state, canonicalId, contentUrl, fileKeys);
-          await writeStateFile(state);
         } catch (error) {
           console.error(`  ✗ Failed to process ${filePath}:`, error);
           throw error;

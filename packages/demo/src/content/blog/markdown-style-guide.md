@@ -11,6 +11,9 @@ downloads:
   - title: "first-post.md"
     file: "first-post.md"
     description: "first-post.md"
+  - title: "雍正御批"
+    file: "/Users/hujian/Downloads/xxx.jpg"
+    description: "雍正御批"
 ---
 
 Here is a sample of some basic Markdown syntax that can be used when writing Markdown content in Astro.

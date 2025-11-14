@@ -6,6 +6,7 @@ export { monaKiosk } from "./integration/index";
 export {
   clearSessionCookie,
   createCustomerSession,
+  getCustomerFromToken,
   hasPolarSession,
   setSessionCookie,
 } from "./lib/auth";

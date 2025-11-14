@@ -388,8 +388,7 @@ async function updateDownloadablesBenefitIfNeeded(
     benefit.metadata ?? undefined,
     params.metadata,
   );
-  const descriptionChanged =
-    (benefit.description ?? "") !== params.description;
+  const descriptionChanged = (benefit.description ?? "") !== params.description;
 
   if (filesChanged || metadataChanged || descriptionChanged) {
     const polar = getPolarClient();

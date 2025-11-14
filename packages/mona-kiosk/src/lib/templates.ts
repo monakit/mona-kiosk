@@ -1,5 +1,6 @@
 import { ROUTES } from "../constants";
 import type { PayableEntry } from "../schemas/payable";
+import type { DownloadableFile } from "./downloadables";
 import { renderErrorHtml } from "./error-renderer";
 
 // Constants for preview truncation
@@ -405,26 +406,23 @@ export function buildTemplateContext(params: {
 }
 
 /**
- * Downloadable file info for template rendering
- */
-export interface DownloadableFileInfo {
-  id: string;
-  name: string;
-  size: number;
-  sizeFormatted: string;
-  mimeType: string;
-  downloadUrl: string;
-}
-
-/**
  * Default downloadable template - floating panel with file list
  */
 export function getDefaultDownloadableTemplate(): string {
   return `
+<div class="mona-kiosk-downloadables-minimized" style="display:none">
+  <button class="mona-kiosk-downloadables-expand" onclick="document.querySelector('.mona-kiosk-downloadables-panel').style.display='block';this.closest('.mona-kiosk-downloadables-minimized').style.display='none'">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20">
+      <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="white"/>
+    </svg>
+    <span class="mona-kiosk-file-count">{{fileCount}}</span>
+  </button>
+</div>
+
 <div class="mona-kiosk-downloadables-panel">
   <div class="mona-kiosk-downloadables-header">
     <h3>Downloadable Files</h3>
-    <button class="mona-kiosk-downloadables-close" aria-label="Close" onclick="this.closest('.mona-kiosk-downloadables-panel').style.display='none'">×</button>
+    <button class="mona-kiosk-downloadables-close" aria-label="Minimize" onclick="this.closest('.mona-kiosk-downloadables-panel').style.display='none';document.querySelector('.mona-kiosk-downloadables-minimized').style.display='block'">−</button>
   </div>
   <div class="mona-kiosk-downloadables-body">
     {{fileList}}
@@ -546,6 +544,67 @@ export function getDefaultDownloadableTemplate(): string {
   color: #6b7280;
   margin: 0;
 }
+
+.mona-kiosk-downloadables-minimized {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+}
+
+.mona-kiosk-downloadables-expand {
+  width: 56px;
+  height: 56px;
+  background: #3b82f6;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.mona-kiosk-downloadables-expand:hover {
+  transform: scale(1.05);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.5);
+}
+
+.mona-kiosk-file-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #ef4444;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.mona-kiosk-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  text-transform: uppercase;
+}
+
+.mona-kiosk-badge.new {
+  background: #3b82f6;
+  color: white;
+}
+
+.mona-kiosk-badge.legacy {
+  background: #9ca3af;
+  color: white;
+}
 </style>
 `;
 }
@@ -554,7 +613,7 @@ export function getDefaultDownloadableTemplate(): string {
  * Render downloadable section with files
  */
 export function renderDownloadableSection(params: {
-  files: DownloadableFileInfo[];
+  files: DownloadableFile[];
   template?: string;
 }): string {
   const { files, template } = params;
@@ -565,26 +624,40 @@ export function renderDownloadableSection(params: {
 
   // Render each file as a download link
   const fileListHtml = files
-    .map(
-      (file) => `
-<a href="${file.downloadUrl}" class="mona-kiosk-download-item" download="${file.name}">
+    .map((downloadable) => {
+      const { file, isNew, isLegacy, downloadUrl } = downloadable;
+
+      // Build version badge if applicable
+      let badge = "";
+      if (file.version) {
+        badge = `<span class="mona-kiosk-badge${isNew ? " new" : isLegacy ? " legacy" : ""}">${file.version}</span>`;
+      } else if (isNew) {
+        badge = '<span class="mona-kiosk-badge new">New</span>';
+      } else if (isLegacy) {
+        badge = '<span class="mona-kiosk-badge legacy">Legacy</span>';
+      }
+
+      return `
+<a href="${downloadUrl}" class="mona-kiosk-download-item" download="${file.name}">
   <div class="mona-kiosk-download-icon">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
       <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
     </svg>
   </div>
   <div class="mona-kiosk-download-info">
-    <p class="mona-kiosk-download-name">${file.name}</p>
-    <p class="mona-kiosk-download-size">${file.sizeFormatted}</p>
+    <p class="mona-kiosk-download-name">${file.name}${badge}</p>
+    <p class="mona-kiosk-download-size">${file.sizeReadable}</p>
   </div>
 </a>
-`,
-    )
+`;
+    })
     .join("");
 
   // Use custom template or default
   const templateHtml = template ?? getDefaultDownloadableTemplate();
 
-  // Replace {{fileList}} with rendered files
-  return templateHtml.replace("{{fileList}}", fileListHtml);
+  // Replace {{fileList}} with rendered files and {{fileCount}} with count
+  return templateHtml
+    .replace("{{fileList}}", fileListHtml)
+    .replace("{{fileCount}}", String(files.length));
 }

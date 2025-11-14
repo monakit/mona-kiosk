@@ -34,7 +34,7 @@ export default defineConfig({
           include: "src/content/blog/**/*.md",
         },
       ],
-      siteUrl: "https://example.com"
+      siteUrl: "https://example.com",
     }),
   ],
 

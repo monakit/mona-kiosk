@@ -172,3 +172,25 @@ export function hasPolarSession(cookies: AstroCookies) {
   const customerId = cookies.get(COOKIE_NAMES.CUSTOMER_ID)?.value;
   return !!(customerToken && customerId);
 }
+
+/**
+ * Get customer info from session token using Customer Portal API
+ */
+export async function getCustomerFromToken(
+  customerToken: string,
+): Promise<{ id: string; email: string } | null> {
+  try {
+    const polar = getPolarClient();
+    const customer = await polar.customerPortal.customers.get({
+      customerSession: customerToken,
+    });
+
+    return {
+      id: customer.id,
+      email: customer.email,
+    };
+  } catch (error) {
+    console.error("Error getting customer from token:", error);
+    return null;
+  }
+}

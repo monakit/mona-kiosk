@@ -1,58 +1,59 @@
+import type { DownloadableRead } from "@polar-sh/sdk/models/components/downloadableread.js";
 import { POLAR_API_PAGE_SIZE } from "../constants.js";
 import { getGlobalConfig } from "../integration/config.js";
 import { getPolarClient } from "./polar-client.js";
 import { findFirstListItem } from "./polar-finder.js";
 
 /**
- * Get Polar API base URL based on server config
+ * Extended downloadable file with convenience fields and version tracking
  */
-function getPolarBaseUrl(): string {
-  const config = getGlobalConfig();
-  return config.polar.server === "sandbox"
-    ? "https://sandbox-api.polar.sh"
-    : "https://api.polar.sh";
-}
-
-export interface DownloadableFile {
-  id: string;
-  name: string;
-  size: number;
-  sizeFormatted: string;
-  mimeType: string;
+export interface DownloadableFile extends DownloadableRead {
+  /**
+   * Convenience field: direct download URL from file.download.url
+   */
   downloadUrl: string;
+  /**
+   * Marks file as newest version when multiple versions exist
+   */
+  isNew?: boolean;
+  /**
+   * Marks file as older version when multiple versions exist
+   */
+  isLegacy?: boolean;
 }
 
 /**
- * Customer Portal API response types
+ * Detect version badges for files
+ * Marks files as "New" or "Legacy" based on Polar's version field and lastModifiedAt
  */
-interface CustomerPortalDownloadableFile {
-  name: string;
-  size: number;
-  size_readable: string;
-  mime_type: string;
-  download: {
-    url: string;
-    expires_at: string;
-  };
-}
+function detectVersions(files: DownloadableFile[]): DownloadableFile[] {
+  // Group files by name to detect multiple versions
+  const filesByName = new Map<string, DownloadableFile[]>();
 
-interface CustomerPortalDownloadableItem {
-  id: string;
-  benefit_id: string;
-  file: CustomerPortalDownloadableFile;
-}
+  for (const file of files) {
+    const group = filesByName.get(file.file.name) || [];
+    group.push(file);
+    filesByName.set(file.file.name, group);
+  }
 
-/**
- * Format file size in human-readable format
- */
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "0 Bytes";
+  // Mark new/legacy for files with multiple versions
+  for (const group of filesByName.values()) {
+    if (group.length > 1) {
+      // Sort by lastModifiedAt (newest first)
+      group.sort((a, b) => {
+        const timeA = a.file.lastModifiedAt?.getTime() ?? 0;
+        const timeB = b.file.lastModifiedAt?.getTime() ?? 0;
+        return timeB - timeA;
+      });
 
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+      group[0].isNew = true;
+      for (let i = 1; i < group.length; i++) {
+        group[i].isLegacy = true;
+      }
+    }
+  }
 
-  return `${Math.round((bytes / k ** i) * 100) / 100} ${sizes[i]}`;
+  return files;
 }
 
 /**
@@ -90,41 +91,24 @@ export async function getDownloadableFiles(params: {
 
     // Use Customer Portal API to get downloadables with download URLs
     // This API returns files with signed S3 download URLs
-    const baseUrl = getPolarBaseUrl();
-
-    const response = await fetch(
-      `${baseUrl}/v1/customer-portal/downloadables/?benefit_id=${benefit.id}&limit=100`,
+    const response = await polar.customerPortal.downloadables.list(
       {
-        headers: {
-          Authorization: `Bearer ${customerToken}`,
-          "Content-Type": "application/json",
-        },
+        customerSession: customerToken,
+      },
+      {
+        benefitId: benefit.id,
+        limit: 100,
       },
     );
 
-    if (!response.ok) {
-      console.error(
-        `Failed to fetch downloadables from Customer Portal: ${response.status} ${response.statusText}`,
-      );
-      return [];
-    }
+    // Extract items from response and add convenience fields
+    const files: DownloadableFile[] = response.result.items.map((item) => ({
+      ...item,
+      downloadUrl: item.file.download.url,
+    }));
 
-    const data = await response.json();
-
-    // Parse the response and extract download information
-    const items: CustomerPortalDownloadableItem[] = data.items || [];
-
-    return items.map((item) => {
-      const file = item.file;
-      return {
-        id: item.id,
-        name: file.name,
-        size: file.size,
-        sizeFormatted: file.size_readable || formatFileSize(file.size),
-        mimeType: file.mime_type,
-        downloadUrl: file.download.url,
-      };
-    });
+    // Detect new/legacy versions
+    return detectVersions(files);
   } catch (error) {
     console.error("Failed to get downloadable files:", error);
     return [];

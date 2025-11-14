@@ -8,7 +8,7 @@ import type {
   ResolvedMonaKioskConfig,
 } from "../integration/config";
 import { getGlobalConfig } from "../integration/config";
-import { hasPolarSession, validateCustomerAccess } from "../lib/auth";
+import { validateCustomerAccess } from "../lib/auth";
 import { entryToContentId } from "../lib/content-id";
 import {
   type DownloadableFile,
@@ -314,32 +314,62 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     // Content is payable - check authentication and access
     let isAuthenticated = false;
     let hasAccess = false;
+    let customerToken: string | undefined;
+    let customerId: string | undefined;
+
+    // First, try to get session from cookies
+    customerToken = cookies.get(COOKIE_NAMES.SESSION)?.value;
+    customerId = cookies.get(COOKIE_NAMES.CUSTOMER_ID)?.value;
+
+    // If no cookie, check URL parameters (e.g., from Polar redirect)
+    if (!customerToken || !customerId) {
+      const urlToken = url.searchParams.get("customer_session_token");
+      if (urlToken) {
+        // Validate token and get customer info
+        const { getCustomerFromToken, setSessionCookie } = await import(
+          "../lib/auth"
+        );
+        const customerInfo = await getCustomerFromToken(urlToken);
+
+        if (customerInfo) {
+          customerToken = urlToken;
+          customerId = customerInfo.id;
+
+          // Set cookies for future requests (30 days expiration)
+          const expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + 30);
+
+          setSessionCookie(
+            cookies,
+            customerToken,
+            expiresAt,
+            customerId,
+            customerInfo.email,
+          );
+        }
+      }
+    }
 
     // Check authentication
     if (config.isAuthenticated) {
       // Use custom auth check
       isAuthenticated = await config.isAuthenticated(context);
     } else {
-      // Default: check MonaKiosk session cookies
-      isAuthenticated = hasPolarSession(cookies);
+      // Default: check if we have session (from cookie or URL)
+      isAuthenticated = !!(customerToken && customerId);
     }
 
     // Check access (only if authenticated)
-    if (isAuthenticated) {
+    if (isAuthenticated && customerToken && customerId) {
       if (config.checkAccess) {
         // Use custom access check
         hasAccess = await config.checkAccess(context, contentInfo.contentId);
       } else {
         // Default: validate via Polar API
-        const customerToken = cookies.get(COOKIE_NAMES.SESSION)?.value;
-        const customerId = cookies.get(COOKIE_NAMES.CUSTOMER_ID)?.value;
-
-        if (customerToken && customerId) {
-          hasAccess = await validateCustomerAccess(customerToken, {
-            customerId: customerId,
-            contentId: contentInfo.contentId,
-          });
-        }
+        hasAccess = await validateCustomerAccess(customerToken, {
+          customerId: customerId,
+          contentId: contentInfo.contentId,
+        });
       }
     }
 
@@ -374,7 +404,7 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     let downloadableSection: string | undefined;
 
     if (hasAccess && hasDownloads) {
-      const customerToken = cookies.get(COOKIE_NAMES.SESSION)?.value;
+      // Use the customerToken we already have (from cookie or URL)
       downloadableFiles = await getDownloadableFiles({
         contentId: contentInfo.contentId,
         customerToken,

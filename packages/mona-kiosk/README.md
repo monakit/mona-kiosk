@@ -234,18 +234,11 @@ The `mona-kiosk/state.json` file tracks uploaded files:
       "checksum": "9z8y7x6w...",
       "localPath": "./files/guide.pdf"
     }
-  },
-  "blog/premium-tutorial": {
-    "contentUrl": "https://example.com/blog/premium-tutorial",
-    "files": [
-      "src/content/blog/premium-tutorial/files/source.zip",
-      "src/content/blog/premium-tutorial/files/guide.pdf"
-    ]
   }
 }
 ```
 
-Keys in `files` are normalized project-relative paths, so renaming a download title never invalidates the cache, and identical binaries in different folders can share the same Polar upload via checksum deduplication.
+Keys in `files` are normalized project-relative (or absolute) paths, so renaming a download title never invalidates the cache, and identical binaries in different folders can share the same Polar upload via checksum deduplication. During `pnpm astro build`, MonaKiosk reads the downloads from each content file, normalizes the paths the same way, and pulls the already-uploaded IDs from this cache. If a path isn't present, the build simply warns you to rerun `pnpm mona-kiosk upload`.
 
 **Commit this file to Git** - it ensures:
 
@@ -299,23 +292,37 @@ pnpm astro build          # Sync updated benefits
 
 ### 5. Floating Download Panel (Automatic)
 
-When customers who purchased content visit the page **with a valid MonaKiosk customer session**, a floating panel can appear with download links. The panel is injected server‑side, so ensure the user hits the page with a fresh request (client-side transitions skip the middleware).
+When customers who purchased content visit the page **with a valid MonaKiosk customer session**, a floating panel appears with download links. The panel is injected server‑side, so ensure the user hits the page with a fresh request (client-side transitions skip the middleware).
 
 **Features:**
 
-- Fixed position (bottom-right by default)
-- Clean UI with file names and sizes
-- Direct download from Polar's CDN (signed S3 URLs)
-- Close button (×)
-- Responsive design
+- **Collapsible UI** - Minimize to floating button, expand to full panel
+- **Version badges** - Shows "New" and "Legacy" badges for file versions (based on Polar's version field)
+- **Fixed position** - Bottom-right by default
+- **Clean UI** - File names, sizes, and version indicators
+- **Direct download** - Signed S3 URLs from Polar's CDN
+- **Responsive design** - Works on all screen sizes
 
 **How it works:**
 
 1. Middleware detects `hasAccess && hasDownloads`
-2. Calls Polar's Customer Portal API with the MonaKiosk customer session token
-3. Receives files with signed download URLs
-4. Renders the floating panel into the server response (client-side navigations need to refetch to see it)
-5. Auto-injects HTML before `</body>` tag
+2. Checks for customer session from **cookie OR URL parameter** (`customer_session_token`)
+3. Calls Polar's Customer Portal API with the session token
+4. Receives files with signed download URLs and version metadata
+5. Renders the floating panel into the server response
+6. Auto-injects HTML before `</body>` tag
+
+**URL Token Support:**
+
+Users can access content directly via URL with session token:
+```
+https://example.com/blog/premium-post?customer_session_token=polar_xxx
+```
+
+The middleware automatically:
+- Validates the token with Polar's Customer Portal API
+- Creates session cookies for future visits (30 days)
+- Grants immediate access without requiring sign-in
 
 **Customization:**
 
@@ -351,8 +358,9 @@ monaKiosk({
 **Template variables:**
 
 - `{{fileList}}` - Rendered list of download links (required)
+- `{{fileCount}}` - Number of downloadable files (used in minimized button badge)
 
-The panel uses Polar's Customer Portal API to fetch files with **signed S3 URLs** that expire automatically. Because this requires a MonaKiosk customer session token, custom access flows must set the session cookie (or render their own UI) for the panel to show up.
+The panel uses Polar's Customer Portal API to fetch files with **signed S3 URLs** that expire automatically. Session tokens can come from cookies or the `customer_session_token` URL parameter, making it easy to share direct access links.
 
 ## How It Works
 
@@ -362,10 +370,17 @@ flowchart TD
   A --> B{Is this payable content?}
 
   B -- No --> FULL[Render full content]
-  B -- Yes --> C[Check customer session cookie]
-  C --> D{Has session?}
+  B -- Yes --> C[Check session cookie]
+  C --> D{Has cookie?}
 
-  D -- No --> PREVIEW[Generate preview + paywall HTML]
+  D -- No --> U{URL has customer_session_token?}
+  U -- Yes --> V[Validate token with Polar API]
+  V --> W{Valid?}
+  W -- Yes --> X[Set session cookies + grant access]
+  W -- No --> PREVIEW[Generate preview + paywall HTML]
+  X --> FULL
+
+  U -- No --> PREVIEW
   D -- Yes --> E[Validate access via Polar API]
   E --> F{Access granted?}
 
@@ -669,16 +684,34 @@ interface PaywallState {
   /** Number of downloadable files */
   downloadCount?: number;
   /** Downloadable files metadata (only when hasAccess && hasDownloads) */
-  downloadableFiles?: Array<{
+  downloadableFiles?: Array<DownloadableFile>;  // Native Polar SDK type with version tracking
+  /** Rendered downloadable panel HTML (only when hasAccess && hasDownloads) */
+  downloadableSection?: string;
+}
+
+// DownloadableFile type (extends Polar SDK's DownloadableRead)
+import type { DownloadableFile } from "mona-kiosk";
+
+interface DownloadableFile {
+  id: string;                    // Polar downloadable ID
+  benefitId: string;             // Polar benefit ID
+  file: {
     id: string;
     name: string;
     size: number;
-    sizeFormatted: string;
+    sizeReadable: string;        // Human-readable size from Polar
     mimeType: string;
-    downloadUrl: string;  // Signed S3 URL from Polar
-  }>;
-  /** Rendered downloadable panel HTML (only when hasAccess && hasDownloads) */
-  downloadableSection?: string;
+    version: string | null;      // Version from Polar
+    lastModifiedAt: Date | null; // Timestamp from Polar
+    download: {
+      url: string;               // Signed S3 download URL
+      expiresAt: string;
+    };
+    // ... other Polar file fields
+  };
+  downloadUrl: string;           // Convenience field (file.download.url)
+  isNew?: boolean;               // Marks newest version (auto-detected)
+  isLegacy?: boolean;            // Marks older versions (auto-detected)
 }
 
 // PayableMetadata schema (for content collections)
@@ -760,6 +793,7 @@ import {
   clearSessionCookie,
   hasPolarSession,
   createCustomerSession,
+  getCustomerFromToken,
   COOKIE_NAMES,
   ROUTES,
 } from "mona-kiosk";
@@ -769,6 +803,10 @@ const isSessionActive = hasPolarSession(cookies);
 
 // Create a new customer session (requires customer email)
 const session = await createCustomerSession("user@example.com");
+
+// Get customer info from session token (validates with Polar)
+const customer = await getCustomerFromToken("polar_session_token_xxx");
+// Returns: { id: string; email: string } | null
 
 // Manually set session cookies
 setSessionCookie(
