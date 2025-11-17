@@ -11,6 +11,7 @@ export interface PolarConfig {
 export interface CollectionConfig {
   include: string;
   paywallTemplate?: string;
+  downloadableTemplate?: string;
   previewHandler?: PreviewHandler;
 }
 
@@ -19,6 +20,7 @@ export interface MonaKioskConfig {
   collections: CollectionConfig[];
   productNameTemplate?: string;
   signinPagePath?: string;
+  siteUrl: string;
   isAuthenticated?: (context: APIContext) => boolean | Promise<boolean>;
   checkAccess?: (
     context: APIContext,
@@ -33,10 +35,11 @@ export type ResolvedCollectionConfig = CollectionConfig & {
 
 export type ResolvedMonaKioskConfig = Omit<
   MonaKioskConfig,
-  "collections" | "signinPagePath"
+  "collections" | "signinPagePath" | "siteUrl"
 > & {
   collections: ResolvedCollectionConfig[];
   signinPagePath: string;
+  siteUrl: string;
 };
 
 // Dev server: Astro middleware runs in isolated V8 context, can't access module variables
@@ -92,6 +95,7 @@ function resolveConfig(input: MonaKioskConfig): ResolvedMonaKioskConfig {
     ...input,
     collections: input.collections.map(resolveCollectionConfig),
     signinPagePath: input.signinPagePath ?? "/mona-kiosk/signin",
+    siteUrl: input.siteUrl,
   };
 }
 

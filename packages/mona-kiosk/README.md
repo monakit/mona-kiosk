@@ -7,6 +7,7 @@ Astro integration for monetizing content with [Polar.sh](https://polar.sh). Add 
 - Injected API routes for auth, checkout, and portal
 - Automatic payable content sync to Polar.sh at build time
 - One-time & subscription pricing
+- Downloadable files - Attach files to your paywalled content (PDFs, ZIPs, etc.)
 - Paywall middleware
 - Customizable defaults
 
@@ -97,6 +98,7 @@ export default defineConfig({
         organizationId: process.env.POLAR_ORG_ID,
         server: (process.env.POLAR_SERVER as "production" | "sandbox") || "sandbox",
       },
+      siteUrl: "https://example.com", // Required for benefits
       collections: [
         { include: "src/content/blog/**/*.md" },
       ],
@@ -156,6 +158,188 @@ npm run dev
 
 Test card: `4242 4242 4242 4242` (any future date, any CVC)
 
+## Downloadable Files
+
+Attach files (PDFs, ZIPs, source code, etc.) to your paywalled content. Files are uploaded to Polar and provided as benefits to customers who purchase access.
+
+> **⚠️ Important: Manual Upload Required**
+>
+> File uploads are **NOT** part of the automated build pipeline. You must run `pnpm mona-kiosk upload` manually before deploying.
+>
+> **Why separate from build?**
+>
+> 1. **Keep repos clean** - Binary assets (PDFs, ZIPs, videos) shouldn't be committed to Git
+> 2. **User control** - You decide where files are stored locally before uploading to Polar's CDN
+> 3. **Selective uploads** - Only changed files are uploaded (checksum-based detection)
+>
+> The build process only reads file IDs from `mona-kiosk/state.json` - it never uploads files.
+
+### 1. Add Downloads to Content
+
+In your content frontmatter:
+
+```yaml
+---
+title: 'Premium Tutorial'
+description: 'Learn advanced techniques'
+price: 2000 # $20
+downloads:
+  - title: "Source Code"
+    file: "./files/source.zip"
+    description: "Complete source code for the tutorial"
+  - title: "PDF Guide"
+    file: "./files/guide.pdf"
+---
+```
+
+**Requirements:**
+
+- File paths are relative to the content file
+- `title` is required (used as display name)
+- `file` is required (path to the actual file)
+- `description` is optional
+
+### 2. Upload Files to Polar
+
+Run the CLI command to upload files:
+
+```bash
+pnpm mona-kiosk upload
+```
+
+**What it does:**
+
+- Scans all collections for content with downloads
+- Calculates SHA256 checksums for each file
+- Compares with cached state (`mona-kiosk/state.json`)
+- Only uploads new or changed files
+- Reuses existing uploads when another path has the same checksum
+- Stores file IDs and checksums in state file
+
+**Example output:**
+
+```
+🚀 Starting upload of downloadable files...
+
+📄 Processing: blog/premium-tutorial
+  📦 Uploading: Source Code...
+  ✅ Uploaded: Source Code → file_abc123xyz
+  ✓ Skipped (unchanged): PDF Guide
+
+✅ Upload complete: 1 uploaded, 1 skipped
+```
+
+### 3. Commit State File
+
+The `mona-kiosk/state.json` file tracks uploaded files:
+
+```json
+{
+  "files": {
+    "src/content/blog/premium-tutorial/files/source.zip": {
+      "polarFileId": "file_abc123xyz",
+      "checksum": "a1b2c3d4...",
+      "localPath": "./files/source.zip"
+    },
+    "src/content/blog/premium-tutorial/files/guide.pdf": {
+      "polarFileId": "file_def456uvw",
+      "checksum": "9z8y7x6w...",
+      "localPath": "./files/guide.pdf"
+    }
+  }
+}
+```
+
+Keys in `files` are normalized project-relative (or absolute) paths, so renaming a download title never invalidates the cache, and identical binaries in different folders can share the same Polar upload via checksum deduplication. During `pnpm astro build`, MonaKiosk reads the downloads from each content file, normalizes the paths the same way, and pulls the already-uploaded IDs from this cache. If a path isn't present, the build simply warns you to rerun `pnpm mona-kiosk upload`.
+
+**Commit this file to Git** - it ensures:
+
+- Team members share the same file IDs
+- CI/CD builds are deterministic
+- Files aren't re-uploaded unnecessarily
+
+### 4. Build & Sync
+
+During build, MonaKiosk reads file IDs from state and creates benefits:
+
+```bash
+pnpm astro build
+```
+
+If files are missing from state, you'll see warnings:
+
+```
+⚠️ Content has 2 downloads but no uploaded files in state.
+   Run 'pnpm mona-kiosk upload' first.
+```
+
+### How It Works
+
+1. **Upload phase** (`mona-kiosk upload`): Files → Polar S3 → state.json
+2. **Build phase** (`astro build`): state.json → Product benefits
+3. **Customer purchase**: Automatic access to downloadables via Polar
+
+Each product gets **two benefits**:
+
+- **Custom benefit**: Content URL (private note with description + URL)
+- **Downloadables benefit**: File downloads (if files exist)
+
+### Workflow Tips
+
+```bash
+# Initial setup
+pnpm mona-kiosk upload    # Upload files to Polar
+git add mona-kiosk/state.json
+git commit -m "Add downloadable files"
+
+# When files change
+pnpm mona-kiosk upload    # Re-upload only changed files
+pnpm astro build          # Sync updated benefits
+
+# Removing downloads
+# 1. Remove downloads from frontmatter
+# 2. Run: pnpm astro build
+# → Downloadables benefit automatically removed from product
+```
+
+### 5. Floating Download Panel (Automatic)
+
+When customers who purchased content visit the page **with a valid MonaKiosk customer session**, a floating panel appears with download links. The panel is injected server‑side, so ensure the user hits the page with a fresh request (client-side transitions skip the middleware).
+
+**Features:**
+
+- **Collapsible UI** - Minimize to floating button, expand to full panel
+- **Version badges** - Shows "New" and "Legacy" badges for file versions (based on Polar's version field)
+- **Fixed position** - Bottom-right by default
+- **Clean UI** - File names, sizes, and version indicators
+- **Direct download** - Signed S3 URLs from Polar's CDN
+- **Responsive design** - Works on all screen sizes
+
+**How it works:**
+
+1. Middleware detects `hasAccess && hasDownloads`
+2. Checks for customer session from **cookie OR URL parameter** (`customer_session_token`)
+3. Calls Polar's Customer Portal API with the session token
+4. Receives files with signed download URLs and version metadata
+5. Renders the floating panel into the server response
+6. Auto-injects HTML before `</body>` tag
+
+**URL Token Support:**
+
+Users can access content directly via URL with session token:
+
+```
+https://example.com/blog/premium-post?customer_session_token=polar_xxx
+```
+
+The middleware automatically:
+
+- Validates the token with Polar's Customer Portal API
+- Creates session cookies for future visits
+- Grants immediate access without requiring sign-in
+
+The panel uses Polar's Customer Portal API to fetch files with **signed S3 URLs** that expire automatically. Session tokens can come from cookies or the `customer_session_token` URL parameter, making it easy to share direct access links.
+
 ## How It Works
 
 ```mermaid
@@ -164,10 +348,17 @@ flowchart TD
   A --> B{Is this payable content?}
 
   B -- No --> FULL[Render full content]
-  B -- Yes --> C[Check customer session cookie]
-  C --> D{Has session?}
+  B -- Yes --> C[Check session cookie]
+  C --> D{Has cookie?}
 
-  D -- No --> PREVIEW[Generate preview + paywall HTML]
+  D -- No --> U{URL has customer_session_token?}
+  U -- Yes --> V[Validate token with Polar API]
+  V --> W{Valid?}
+  W -- Yes --> X[Set session cookies + grant access]
+  W -- No --> PREVIEW[Generate preview + paywall HTML]
+  X --> FULL
+
+  U -- No --> PREVIEW
   D -- Yes --> E[Validate access via Polar API]
   E --> F{Access granted?}
 
@@ -190,9 +381,11 @@ monaKiosk({
     organizationSlug: string;
     server: "production" | "sandbox";  // Required - always specify explicitly
   },
+  siteUrl: string;                      // Required - base URL for content links in benefits
   collections: [{
     include: string;                    // Glob pattern (e.g., "src/content/blog/**/*.md")
     paywallTemplate?: string;           // Custom paywall HTML
+    downloadableTemplate?: string;      // Custom downloadable panel HTML
     previewHandler?: PreviewHandler;    // Custom preview function
   }],
   productNameTemplate?: string;         // E.g., "[title] - Premium"
@@ -202,7 +395,9 @@ monaKiosk({
 })
 ```
 
-> ⚠️ **Important**: Custom functions (`isAuthenticated`, `checkAccess`, `previewHandler`) must be self-contained. See [Custom Authentication & Access Control](#custom-authentication--access-control) for details.
+> ⚠️ **Important**: Custom functions (`isAuthenticated`, `checkAccess`, `previewHandler`) must be self-contained.
+>
+> See [Custom Authentication & Access Control](#custom-authentication--access-control) for details.
 
 ## Customization
 
@@ -256,6 +451,9 @@ monaKiosk({
 - `{{isSubscription}}` - Boolean: whether this is a subscription product ("true" or "false" as string)
 - `{{interval}}` - Subscription interval ("month", "year", "week", "day") - only for subscriptions
 - `{{billingCycle}}` - Human-readable billing cycle (e.g., "month") - only for subscriptions
+- `{{hasDownloads}}` - Boolean: whether content has downloadable files ("true" or "false" as string)
+- `{{downloadCount}}` - Number of downloadable files (number)
+- `{{downloadInfo}}` - Pre-formatted HTML showing download info (e.g., "✨ Includes 2 downloadable files")
 
 ### Custom Preview Handler
 
@@ -336,6 +534,42 @@ monaKiosk({
 | Not authenticated | `false` | `false` | ✅ Yes | ✅ Yes | ❌ No |
 | Authenticated, not purchased | `true` | `false` | ❌ No | ✅ Yes | ❌ No |
 | Authenticated, purchased | `true` | `true` | ❌ No | ❌ No | ✅ Yes |
+
+### Custom Downloadable Panel Template
+
+Override the default floating panel design for downloadable files:
+
+```typescript
+monaKiosk({
+  collections: [{
+    include: "src/content/blog/**/*.md",
+    downloadableTemplate: `
+      <div class="my-downloads">
+        <h4>📥 Your Downloads</h4>
+        {{fileList}}
+      </div>
+
+      <style>
+        .my-downloads {
+          position: fixed;
+          top: 20px;
+          left: 20px;
+          background: white;
+          padding: 20px;
+          border-radius: 12px;
+          box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+          max-width: 350px;
+        }
+      </style>
+    `
+  }]
+})
+```
+
+**Available template variables:**
+
+- `{{fileList}}` - Rendered list of download links (required)
+- `{{fileCount}}` - Number of downloadable files (used in minimized button badge)
 
 ### Custom Product Names
 
@@ -431,11 +665,24 @@ monaKiosk({
 
 ### Types
 
-```typescript
-import type { PayableEntry, PaywallState } from "mona-kiosk";
-import { isPayableEntry, PayableMetadata } from "mona-kiosk";
+MonaKiosk exports the following types and utilities:
 
-// In Astro.locals
+```typescript
+// Type imports
+import type {
+  PayableEntry,      // Collection entry with payable metadata
+  PaywallState,      // State object in Astro.locals
+  PreviewHandler,    // Custom preview function type
+  MonaKioskConfig    // Integration configuration
+} from "mona-kiosk";
+
+// Value imports
+import {
+  isPayableEntry,    // Type guard for payable content
+  PayableMetadata    // Zod schema for frontmatter
+} from "mona-kiosk";
+
+// PaywallState - Available in Astro.locals.paywall
 interface PaywallState {
   /** Whether the current content has a price and is protected */
   isPayable: boolean;
@@ -459,13 +706,56 @@ interface PaywallState {
   description?: string;
   /** Preview HTML to render for users without access (includes paywall UI) */
   preview?: string;
+  /** Whether content has downloadable files */
+  hasDownloads: boolean;
+  /** Number of downloadable files */
+  downloadCount?: number;
+  /** Downloadable files metadata (only when hasAccess && hasDownloads) */
+  downloadableFiles?: Array<DownloadableFile>;  // Native Polar SDK type with version tracking
+  /** Rendered downloadable panel HTML (only when hasAccess && hasDownloads) */
+  downloadableSection?: string;
 }
+
+// DownloadableFile type
+// Note: DownloadableFile is not directly exported from "mona-kiosk"
+// It's accessible through PaywallState (Astro.locals.paywall.downloadableFiles)
+// The type extends Polar SDK's DownloadableRead with additional fields:
+
+interface DownloadableFile {
+  id: string;                    // Polar downloadable ID
+  benefitId: string;             // Polar benefit ID
+  file: {
+    id: string;
+    name: string;
+    size: number;
+    sizeReadable: string;        // Human-readable size from Polar
+    mimeType: string;
+    version: string | null;      // Version from Polar
+    lastModifiedAt: Date | null; // Timestamp from Polar
+    download: {
+      url: string;               // Signed S3 download URL
+      expiresAt: string;
+    };
+    // ... other Polar file fields
+  };
+  downloadUrl: string;           // Convenience field (file.download.url)
+  isNew?: boolean;               // Marks newest version (auto-detected)
+  isLegacy?: boolean;            // Marks older versions (auto-detected)
+}
+
+// Usage example:
+// const downloadables = Astro.locals.paywall?.downloadableFiles;
 
 // PayableMetadata schema (for content collections)
 const PayableMetadata = z.object({
   price: z.coerce.number().int().min(1).optional(),  // Optional - content can be free
   currency: z.string().default("usd").optional(),
   interval: z.enum(["month", "year", "week", "day"]).optional(),  // For subscriptions
+  downloads: z.array(z.object({
+    title: z.string(),         // Display name for the download
+    file: z.string(),          // Path relative to content file
+    description: z.string().optional(),
+  })).optional(),              // Downloadable files
 });
 
 // Type guard for payable content
@@ -488,6 +778,7 @@ import type { APIContext } from "astro";
 // Full configuration interface
 interface MonaKioskConfig {
   polar: PolarConfig;
+  siteUrl: string;                    // Required - base URL for content links
   collections: CollectionConfig[];
   productNameTemplate?: string;
   signinPagePath?: string;
@@ -505,6 +796,7 @@ interface PolarConfig {
 interface CollectionConfig {
   include: string;                    // Required glob pattern
   paywallTemplate?: string;           // Optional custom paywall HTML
+  downloadableTemplate?: string;      // Optional custom downloadable panel HTML
   previewHandler?: PreviewHandler;    // Optional custom preview function
 }
 ```
@@ -533,6 +825,7 @@ import {
   clearSessionCookie,
   hasPolarSession,
   createCustomerSession,
+  getCustomerFromToken,
   COOKIE_NAMES,
   ROUTES,
 } from "mona-kiosk";
@@ -542,6 +835,10 @@ const isSessionActive = hasPolarSession(cookies);
 
 // Create a new customer session (requires customer email)
 const session = await createCustomerSession("user@example.com");
+
+// Get customer info from session token (validates with Polar)
+const customer = await getCustomerFromToken("polar_session_token_xxx");
+// Returns: { id: string; email: string } | null
 
 // Manually set session cookies
 setSessionCookie(
@@ -583,10 +880,17 @@ console.log(ROUTES.SIGNIN_PAGE);   // "/mona-kiosk/signin"
 - Server-side validation - All access checks via Polar API
 - Session pairing - Token + customer ID for fast validation
 
-## How to Publish
+## Development
 
-- pnpm pack
-- pnpm publish
+### Publishing to npm
+
+```bash
+# Build and test the package locally
+pnpm pack
+
+# Publish to npm registry
+pnpm publish
+```
 
 ## License
 

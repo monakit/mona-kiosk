@@ -2,19 +2,16 @@ import type { APIRoute } from "astro";
 import { clearSessionCookie } from "../lib/auth";
 
 /**
- * Sign-out endpoint - clears session cookies and redirects back
+ * Sign-out endpoint - clears session cookies and redirects to index page
  * POST /api/mona-kiosk/auth/signout
  */
-export const POST: APIRoute = async ({ cookies, request, redirect }) => {
+export const POST: APIRoute = async ({ cookies, redirect }) => {
   try {
     // Clear session cookies
     clearSessionCookie(cookies);
 
-    // Get return URL from Referer header or default to homepage
-    const referer = request.headers.get("Referer");
-    const returnUrl = referer || "/";
-
-    return redirect(returnUrl, 302);
+    // Redirect to index page
+    return redirect("/", 302);
   } catch (error) {
     console.error("Sign-out error:", error);
     return new Response(

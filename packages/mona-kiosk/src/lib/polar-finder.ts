@@ -60,8 +60,9 @@ export async function findByMetadataCandidates<T, TArgs>(params: {
   candidates: Iterable<string>;
   getMetadataValue: (item: T) => unknown;
   normalise?: (value: unknown) => string | null;
+  predicate?: (item: T) => boolean;
 }): Promise<T | null> {
-  const { list, buildArgs, candidates, getMetadataValue } = params;
+  const { list, buildArgs, candidates, getMetadataValue, predicate } = params;
   const normalise = params.normalise ?? normaliseMetadataValue;
 
   for (const candidate of candidates) {
@@ -69,9 +70,12 @@ export async function findByMetadataCandidates<T, TArgs>(params: {
 
     for await (const page of iterator) {
       const items = page.result?.items ?? [];
+
       const match = items.find((item) => {
         const value = normalise(getMetadataValue(item));
-        return value === candidate;
+        const metadataMatches = value === candidate;
+        const predicateMatches = predicate ? predicate(item) : true;
+        return metadataMatches && predicateMatches;
       });
 
       if (match) {

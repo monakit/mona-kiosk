@@ -1,9 +1,8 @@
 ---
-import { Image } from "astro:assets";
 import { getCollection } from "astro:content";
 import BaseHead from "../../components/BaseHead.astro";
+import BlogCard from "../../components/BlogCard.astro";
 import Footer from "../../components/Footer.astro";
-import FormattedDate from "../../components/FormattedDate.astro";
 import Header from "../../components/Header.astro";
 import { SITE_DESCRIPTION, SITE_TITLE } from "../../consts";
 
@@ -20,68 +19,44 @@ const posts = (await getCollection("blog")).sort(
 			main {
 				width: 960px;
 			}
-			ul {
-				display: flex;
-				flex-wrap: wrap;
-				gap: 2rem;
+
+			.blog-header {
+				margin-bottom: 2rem;
+			}
+
+			.blog-header h1 {
+				font-size: 2.5rem;
+				margin: 0 0 0.5rem 0;
+				color: rgb(var(--black));
+			}
+
+			.blog-header p {
+				margin: 0;
+				color: rgb(var(--gray));
+				font-size: 1.1rem;
+			}
+
+			.blog-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+				gap: 1.5rem;
 				list-style-type: none;
 				margin: 0;
 				padding: 0;
 			}
-			ul li {
-				width: calc(50% - 1rem);
-			}
-			ul li * {
-				text-decoration: none;
-				transition: 0.2s ease;
-			}
-			ul li:first-child {
-				width: 100%;
-				margin-bottom: 1rem;
-				text-align: center;
-			}
-			ul li:first-child img {
-				width: 100%;
-			}
-			ul li:first-child .title {
-				font-size: 2.369rem;
-			}
-			ul li img {
-				margin-bottom: 0.5rem;
-				border-radius: 12px;
-			}
-			ul li a {
-				display: block;
-			}
-			.title {
-				margin: 0;
-				color: rgb(var(--black));
-				line-height: 1;
-			}
-			.date {
-				margin: 0;
-				color: rgb(var(--gray));
-			}
-			ul li a:hover h4,
-			ul li a:hover .date {
-				color: rgb(var(--accent));
-			}
-			ul a:hover img {
-				box-shadow: var(--box-shadow);
-			}
+
 			@media (max-width: 720px) {
-				ul {
-					gap: 0.5em;
-				}
-				ul li {
+				main {
 					width: 100%;
-					text-align: center;
 				}
-				ul li:first-child {
-					margin-bottom: 0;
+
+				.blog-grid {
+					grid-template-columns: 1fr;
+					gap: 1rem;
 				}
-				ul li:first-child .title {
-					font-size: 1.563em;
+
+				.blog-header h1 {
+					font-size: 2rem;
 				}
 			}
 		</style>
@@ -90,22 +65,16 @@ const posts = (await getCollection("blog")).sort(
 		<Header />
 		<main>
 			<section>
-				<ul>
-					{
-						posts.map((post) => (
-							<li>
-								<a href={`/blog/${post.id}/`}>
-									{post.data.heroImage && (
-										<Image width={720} height={360} src={post.data.heroImage} alt="" />
-									)}
-									<h4 class="title">{post.data.title}</h4>
-									<p class="date">
-										<FormattedDate date={post.data.pubDate} />
-									</p>
-								</a>
-							</li>
-						))
-					}
+				<div class="blog-header">
+					<h1>Blog Posts</h1>
+					<p>Explore our collection of articles and tutorials</p>
+				</div>
+				<ul class="blog-grid">
+					{posts.map((post) => (
+						<li>
+							<BlogCard post={post} />
+						</li>
+					))}
 				</ul>
 			</section>
 		</main>

@@ -1,9 +1,11 @@
 import { readFile, stat } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import matter from "gray-matter";
 import { glob } from "tinyglobby";
 import type { ResolvedMonaKioskConfig } from "../integration/config";
 import { pathToContentId } from "./content-id";
 import { cacheProductMappings, upsertProduct } from "./polar-client";
+import { normalizeFileKey, readStateFile } from "./state-manager";
 
 /**
  * Payable frontmatter data from markdown files
@@ -18,6 +20,11 @@ interface PayableData {
   title?: string;
   description?: string;
   slug?: string;
+  downloads?: Array<{
+    title: string;
+    file: string;
+    description?: string;
+  }>;
 }
 
 function isSubscriptionData(data: PayableData): boolean {
@@ -42,6 +49,8 @@ async function processPayableFile(
   filePath: string,
   collectionConfig: ResolvedMonaKioskConfig["collections"][number],
   config: ResolvedMonaKioskConfig,
+  state: Awaited<ReturnType<typeof readStateFile>>,
+  baseDir: string,
 ): Promise<boolean> {
   const fileInfo = await stat(filePath);
   const content = await readFile(filePath, "utf-8");
@@ -66,6 +75,41 @@ async function processPayableFile(
   const title = payableData.title || slug;
   const description = payableData.description || `Premium content: ${title}`;
   const updatedAt = Math.trunc(fileInfo.mtimeMs);
+  const contentDir = dirname(filePath);
+
+  // Get file IDs from state instead of uploading
+  const fileIds: string[] = [];
+  const missingDownloads: string[] = [];
+  const seen = new Set<string>();
+
+  if (payableData.downloads && payableData.downloads.length > 0) {
+    for (const download of payableData.downloads) {
+      const absolutePath = resolve(contentDir, download.file);
+      const fileKey = normalizeFileKey(absolutePath, { baseDir });
+      const cachedEntry = state.files[fileKey];
+
+      if (cachedEntry) {
+        if (!seen.has(cachedEntry.polarFileId)) {
+          seen.add(cachedEntry.polarFileId);
+          fileIds.push(cachedEntry.polarFileId);
+        }
+      } else {
+        missingDownloads.push(download.file);
+      }
+    }
+
+    if (missingDownloads.length > 0) {
+      console.warn(
+        `  ⚠️ Missing uploads for downloads: ${missingDownloads.join(", ")}`,
+      );
+      console.warn(`     Run 'pnpm mona-kiosk upload' to add them.`);
+    } else if (fileIds.length > 0) {
+      console.log(`  📦 Using ${fileIds.length} cached file(s)`);
+    }
+  }
+
+  // Generate content URL
+  const contentUrl = `${config.siteUrl}/${canonicalId}`;
 
   // Create or update product based on pricing model
   const productData = {
@@ -76,6 +120,9 @@ async function processPayableFile(
     contentId: canonicalId,
     collection: collectionConfig.name,
     updatedAt,
+    contentUrl,
+    fileIds,
+    hasDownloads: fileIds.length > 0,
     ...(isSubscriptionData(payableData) && { interval: payableData.interval }),
   };
 
@@ -100,6 +147,10 @@ async function processPayableFile(
  */
 export async function syncProductsToPolar(config: ResolvedMonaKioskConfig) {
   console.log("🔄 Syncing products to Polar.sh...");
+
+  // Read state file
+  const state = await readStateFile();
+  const baseDir = process.cwd();
 
   let totalSynced = 0;
 
@@ -127,6 +178,8 @@ export async function syncProductsToPolar(config: ResolvedMonaKioskConfig) {
             filePath,
             collectionConfig,
             config,
+            state,
+            baseDir,
           );
           if (wasSynced) {
             totalSynced++;

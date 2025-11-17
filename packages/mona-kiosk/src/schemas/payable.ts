@@ -23,6 +23,20 @@ export const PayableMetadata = z.object({
     .enum(["month", "year", "week", "day"])
     .describe("Billing interval for subscriptions")
     .optional(),
+  downloads: z
+    .array(
+      z.object({
+        title: z.string().describe("Display name for the download"),
+        file: z
+          .string()
+          .describe(
+            "Path to file relative to content (e.g., './files/source.zip')",
+          ),
+        description: z.string().optional().describe("Optional description"),
+      }),
+    )
+    .optional()
+    .describe("Downloadable files for this content"),
 });
 
 export type PayableMetadataType = z.infer<typeof PayableMetadata>;
@@ -33,6 +47,11 @@ export interface PayableContent {
   price: number;
   currency?: string;
   interval?: "month" | "year" | "week" | "day";
+  downloads?: Array<{
+    title: string;
+    file: string;
+    description?: string;
+  }>;
 }
 
 /**

@@ -4,6 +4,16 @@ description: 'Here is a sample of some basic Markdown syntax that can be used wh
 pubDate: 'Jun 19 2024'
 heroImage: '../../assets/blog-placeholder-1.jpg'
 price: 100
+downloads:
+  - title: "gunda-generated"
+    file: "/Users/hujian/Downloads/gunda-generated.jpeg"
+    description: "gunda-generated"
+  - title: "first-post.md"
+    file: "first-post.md"
+    description: "first-post.md"
+  - title: "雍正御批"
+    file: "/Users/hujian/Downloads/xxx.jpg"
+    description: "雍正御批"
 ---
 
 Here is a sample of some basic Markdown syntax that can be used when writing Markdown content in Astro.

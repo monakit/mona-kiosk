@@ -3,7 +3,6 @@ import type { Benefit } from "@polar-sh/sdk/models/components/benefit";
 import type { ExistingProductPrice } from "@polar-sh/sdk/models/components/existingproductprice";
 import type { Product } from "@polar-sh/sdk/models/components/product";
 import type { ProductPriceFixedCreate } from "@polar-sh/sdk/models/components/productpricefixedcreate";
-import type { BenefitsListRequest } from "@polar-sh/sdk/models/operations/benefitslist.js";
 import type { ProductsListRequest } from "@polar-sh/sdk/models/operations/productslist.js";
 import { POLAR_API_PAGE_SIZE } from "../constants";
 import { getGlobalConfig } from "../integration/config";
@@ -17,7 +16,20 @@ let polarClientInstance: Polar | null = null;
 let polarClientProxy: Polar | null = null;
 const productMapping = new Map<string, string>();
 const productToContentMapping = new Map<string, string>();
-const benefitCache = new Map<string, string>();
+
+function assertBenefitType(
+  benefit: Benefit,
+  expectedType: Benefit["type"],
+  context: { contentId: string; benefitPurpose: string },
+) {
+  if (benefit.type !== expectedType) {
+    throw new Error(
+      `  ✗ Found benefit "${benefit.id}" for content "${context.contentId}" but it is type "${benefit.type}". ` +
+        `MonaKiosk needs a "${expectedType}" benefit for ${context.benefitPurpose}. ` +
+        `Delete or rename the existing benefit in Polar and rerun the sync.`,
+    );
+  }
+}
 
 /**
  * Initialize the Polar client instance (internal use only)
@@ -259,52 +271,222 @@ function buildFixedPricePayload(
   return createFixedPrice(price, currency);
 }
 
-async function ensureBenefitForContent(params: {
+/**
+ * Find all benefits for a content ID
+ * Returns benefits grouped by type for efficient processing
+ */
+async function findBenefitsForContent(params: {
+  contentId: string;
+  organizationId: string;
+}): Promise<{
+  custom: Benefit | null;
+  downloadables: Benefit | null;
+}> {
+  const { contentId, organizationId } = params;
+  const polar = getPolarClient();
+
+  // Search once for all benefits with this content_id
+  const allBenefits: Benefit[] = [];
+  const candidates = generateContentIdCandidates(contentId);
+
+  for (const candidate of candidates) {
+    const iterator = await polar.benefits.list({
+      organizationId,
+      metadata: { content_id: candidate },
+      limit: POLAR_API_PAGE_SIZE,
+    });
+
+    for await (const page of iterator) {
+      const items = page.result?.items ?? [];
+      for (const item of items) {
+        if (normaliseMetadataValue(item.metadata?.content_id) === candidate) {
+          allBenefits.push(item);
+        }
+      }
+    }
+
+    // If we found any benefits, stop searching candidates
+    if (allBenefits.length > 0) {
+      break;
+    }
+  }
+
+  // Filter by type client-side
+  const custom = allBenefits.find((b) => b.type === "custom") ?? null;
+  const downloadables =
+    allBenefits.find((b) => b.type === "downloadables") ?? null;
+
+  return { custom, downloadables };
+}
+
+/**
+ * Create or update custom benefit with description + URL in private note
+ * This benefit provides customers with access information and content URL
+ */
+async function ensureCustomBenefitForContent(params: {
   contentId: string;
   collection: string;
   organizationId: string;
   title: string;
   description: string;
+  contentUrl: string;
+  existingBenefit: Benefit | null;
 }): Promise<string> {
-  const { contentId, organizationId } = params;
+  const { contentId, description, contentUrl, existingBenefit } = params;
 
-  const cached = benefitCache.get(contentId);
-  if (cached) {
-    return cached;
-  }
+  const desiredMetadata = {
+    content_id: params.contentId,
+    collection: params.collection,
+    title: params.title,
+  };
+  const benefitDescription = params.title.substring(0, 42);
+  const privateNote = `${description}\n\nAccess your content here: ${contentUrl}`;
 
   const polar = getPolarClient();
-  const existingBenefit = await findByMetadataCandidates({
-    list: (args: BenefitsListRequest) => polar.benefits.list(args),
-    buildArgs: (candidate) => ({
-      organizationId,
-      metadata: { content_id: candidate },
-      limit: POLAR_API_PAGE_SIZE,
-    }),
-    candidates: [contentId],
-    getMetadataValue: (item: Benefit) => item.metadata?.content_id,
-    normalise: normaliseMetadataValue,
-  });
 
   if (existingBenefit) {
-    benefitCache.set(contentId, existingBenefit.id);
+    assertBenefitType(existingBenefit, "custom", {
+      contentId,
+      benefitPurpose: "sharing gated content details",
+    });
+
+    const existingNote =
+      (existingBenefit.properties as { note?: string })?.note ?? "";
+    const metadataChanged = !metadataMatches(
+      existingBenefit.metadata ?? undefined,
+      desiredMetadata,
+    );
+    const noteChanged = existingNote !== privateNote;
+    const descriptionChanged =
+      (existingBenefit.description ?? "") !== benefitDescription;
+
+    if (metadataChanged || noteChanged || descriptionChanged) {
+      await polar.benefits.update({
+        id: existingBenefit.id,
+        requestBody: {
+          type: "custom",
+          description: benefitDescription,
+          metadata: desiredMetadata,
+          properties: {
+            note: privateNote,
+          },
+        },
+      });
+    }
+
     return existingBenefit.id;
   }
 
   const created = await polar.benefits.create({
     type: "custom",
-    description: params.title,
-    metadata: {
-      content_id: params.contentId,
-      collection: params.collection,
-      title: params.title,
-    },
+    description: benefitDescription, // Max 42 chars
+    metadata: desiredMetadata,
     properties: {
-      note: params.description,
+      note: privateNote,
     },
   });
 
-  benefitCache.set(contentId, created.id);
+  return created.id;
+}
+
+/**
+ * Update downloadables benefit files/metadata if they have changed
+ */
+async function updateDownloadablesBenefitIfNeeded(
+  benefit: Benefit,
+  params: {
+    fileIds: string[];
+    metadata: Record<string, string>;
+    description: string;
+  },
+): Promise<void> {
+  const existingFiles =
+    (benefit.properties as { files?: string[] })?.files || [];
+  const fileSet = new Set(existingFiles);
+  const filesChanged =
+    existingFiles.length !== params.fileIds.length ||
+    params.fileIds.some((id) => !fileSet.has(id));
+
+  const metadataChanged = !metadataMatches(
+    benefit.metadata ?? undefined,
+    params.metadata,
+  );
+  const descriptionChanged = (benefit.description ?? "") !== params.description;
+
+  if (filesChanged || metadataChanged || descriptionChanged) {
+    const polar = getPolarClient();
+    await polar.benefits.update({
+      id: benefit.id,
+      requestBody: {
+        type: "downloadables",
+        description: params.description,
+        metadata: params.metadata,
+        properties: {
+          files: params.fileIds,
+        },
+      },
+    });
+  }
+}
+
+function formatDownloadablesDescription(title: string): string {
+  return `Files for ${title}`.substring(0, 42);
+}
+
+function metadataMatches(
+  metadata: Record<string, unknown> | undefined,
+  expected: Record<string, string>,
+): boolean {
+  const current = metadata ?? {};
+  return Object.entries(expected).every(([key, value]) => {
+    return normaliseMetadataValue(current[key]) === value;
+  });
+}
+
+/**
+ * Create or update downloadables benefit with uploaded files
+ * This benefit provides customers with downloadable files
+ */
+async function ensureDownloadablesBenefitForContent(params: {
+  contentId: string;
+  collection: string;
+  organizationId: string;
+  title: string;
+  fileIds: string[];
+  existingBenefit: Benefit | null;
+}): Promise<string> {
+  const { contentId, fileIds, existingBenefit } = params;
+  const polar = getPolarClient();
+  const metadata = {
+    content_id: params.contentId,
+    collection: params.collection,
+    title: params.title,
+  };
+  const benefitDescription = formatDownloadablesDescription(params.title);
+
+  if (existingBenefit) {
+    assertBenefitType(existingBenefit, "downloadables", {
+      contentId,
+      benefitPurpose: "serving downloadable files",
+    });
+    await updateDownloadablesBenefitIfNeeded(existingBenefit, {
+      fileIds,
+      metadata,
+      description: benefitDescription,
+    });
+    return existingBenefit.id;
+  }
+
+  // Create new downloadables benefit
+  const created = await polar.benefits.create({
+    type: "downloadables",
+    description: benefitDescription,
+    metadata,
+    properties: {
+      files: fileIds,
+    },
+  });
+
   return created.id;
 }
 
@@ -404,18 +586,23 @@ async function updateProduct(
 
 async function syncProductBenefits(
   product: Product,
-  benefitId: string,
+  benefitIds: string[],
 ): Promise<Product> {
   const benefits = product.benefits ?? [];
   const existingBenefitIds = new Set(benefits.map((benefit) => benefit.id));
+  const newBenefitIds = new Set(benefitIds);
 
-  if (!existingBenefitIds.has(benefitId)) {
+  // Check if benefits changed (added or removed)
+  const benefitsChanged =
+    existingBenefitIds.size !== newBenefitIds.size ||
+    !Array.from(newBenefitIds).every((id) => existingBenefitIds.has(id));
+
+  if (benefitsChanged) {
     const polar = getPolarClient();
-    existingBenefitIds.add(benefitId);
     return polar.products.updateBenefits({
       id: product.id,
       productBenefitsUpdate: {
-        benefits: Array.from(existingBenefitIds),
+        benefits: benefitIds, // Use ONLY the new benefit IDs (replaces existing)
       },
     });
   }
@@ -432,6 +619,9 @@ export async function upsertProduct(data: {
   contentId: string;
   collection: string;
   updatedAt: number;
+  contentUrl: string;
+  fileIds?: string[];
+  hasDownloads?: boolean;
 }): Promise<Product> {
   const organizationId = getGlobalConfig().polar.organizationId;
   const existing = await findExistingProduct(
@@ -483,13 +673,36 @@ export async function upsertProduct(data: {
     }
   }
 
-  const benefitId = await ensureBenefitForContent({
+  // Find all existing benefits for this content (single search)
+  const existingBenefits = await findBenefitsForContent({
+    contentId: data.contentId,
+    organizationId,
+  });
+
+  // Create custom benefit (always)
+  const customBenefitId = await ensureCustomBenefitForContent({
     contentId: data.contentId,
     collection: data.collection,
     organizationId,
     title: data.name,
     description: data.description,
+    contentUrl: data.contentUrl,
+    existingBenefit: existingBenefits.custom,
   });
 
-  return syncProductBenefits(product, benefitId);
+  // Create downloadables benefit (if files exist)
+  const benefitIds = [customBenefitId];
+  if (data.hasDownloads && data.fileIds && data.fileIds.length > 0) {
+    const downloadablesBenefitId = await ensureDownloadablesBenefitForContent({
+      contentId: data.contentId,
+      collection: data.collection,
+      organizationId,
+      title: data.name,
+      fileIds: data.fileIds,
+      existingBenefit: existingBenefits.downloadables,
+    });
+    benefitIds.push(downloadablesBenefitId);
+  }
+
+  return syncProductBenefits(product, benefitIds);
 }
