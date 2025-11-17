@@ -1,6 +1,10 @@
 ---
 import { SITE_TITLE } from "../consts";
 import HeaderLink from "./HeaderLink.astro";
+
+// Check if user is signed in
+const customerEmail = Astro.cookies.get("mona_kiosk_customer_email")?.value;
+const isSignedIn = !!customerEmail;
 ---
 
 <header>
@@ -11,7 +15,18 @@ import HeaderLink from "./HeaderLink.astro";
 			<HeaderLink href="/blog">Blog</HeaderLink>
 			<HeaderLink href="/about">About</HeaderLink>
 		</div>
-		<div class="social-links">
+		<div class="right-section">
+			{isSignedIn ? (
+				<div class="user-info">
+					<span class="user-email">{customerEmail}</span>
+					<form method="POST" action="/api/mona-kiosk/auth/signout" style="display: inline;">
+						<button type="submit" class="signout-button">Sign Out</button>
+					</form>
+				</div>
+			) : (
+				<a href="/mona-kiosk/signin" class="signin-button">Sign In</a>
+			)}
+			<div class="social-links">
 			<a href="https://m.webtoo.ls/@astro" target="_blank">
 				<span class="sr-only">Follow Astro on Mastodon</span>
 				<svg viewBox="0 0 16 16" aria-hidden="true" width="32" height="32"
@@ -39,6 +54,7 @@ import HeaderLink from "./HeaderLink.astro";
 					></path></svg
 				>
 			</a>
+			</div>
 		</div>
 	</nav>
 </header>
@@ -73,6 +89,53 @@ import HeaderLink from "./HeaderLink.astro";
 		text-decoration: none;
 		border-bottom-color: var(--accent);
 	}
+	.right-section {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+	.signin-button {
+		padding: 0.5rem 1rem;
+		background: rgb(var(--accent));
+		color: white;
+		border-radius: 4px;
+		font-size: 0.9rem;
+		font-weight: 500;
+		border-bottom: none !important;
+		transition: opacity 0.2s ease;
+		white-space: nowrap;
+	}
+	.signin-button:hover {
+		opacity: 0.8;
+	}
+	.user-info {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.5rem 0;
+	}
+	.user-email {
+		color: rgb(var(--gray-dark));
+		font-size: 0.9rem;
+		white-space: nowrap;
+	}
+	.signout-button {
+		padding: 0.25rem 0.75rem;
+		background: transparent;
+		color: rgb(var(--accent));
+		border: 1px solid rgb(var(--accent));
+		border-radius: 4px;
+		font-size: 0.85rem;
+		font-weight: 500;
+		transition: all 0.2s ease;
+		white-space: nowrap;
+		cursor: pointer;
+		font-family: inherit;
+	}
+	.signout-button:hover {
+		background: rgb(var(--accent));
+		color: white;
+	}
 	.social-links,
 	.social-links a {
 		display: flex;
@@ -80,6 +143,26 @@ import HeaderLink from "./HeaderLink.astro";
 	@media (max-width: 720px) {
 		.social-links {
 			display: none;
+		}
+		.right-section {
+			gap: 0.5rem;
+		}
+		.signin-button {
+			padding: 0.4rem 0.8rem;
+			font-size: 0.85rem;
+		}
+		.user-info {
+			gap: 0.5rem;
+		}
+		.user-email {
+			font-size: 0.8rem;
+			max-width: 150px;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+		.signout-button {
+			padding: 0.25rem 0.6rem;
+			font-size: 0.8rem;
 		}
 	}
 </style>
