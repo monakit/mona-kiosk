@@ -2,6 +2,7 @@
   "name": "mona-kiosk",
   "displayName": "MonaKiosk",
   "description": "Astro integration for monetizing content with Polar.sh.",
+  "homepage": "https://www.mymona.xyz/projects#monakiosk",
   "type": "module",
   "version": "0.2.1",
   "license": "MIT",
