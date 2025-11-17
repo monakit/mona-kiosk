@@ -1,9 +1,9 @@
 ---
-import type { CollectionEntry } from 'astro:content';
-import FormattedDate from './FormattedDate.astro';
+import type { CollectionEntry } from "astro:content";
+import FormattedDate from "./FormattedDate.astro";
 
 interface Props {
-	post: CollectionEntry<'blog'>;
+  post: CollectionEntry<"blog">;
 }
 
 const { post } = Astro.props;
@@ -11,7 +11,7 @@ const { title, description, pubDate, price, downloads } = post.data;
 
 // Format price in cents to dollars
 const formatPrice = (cents: number) => {
-	return `$${(cents / 100).toFixed(2)}`;
+  return `$${(cents / 100).toFixed(2)}`;
 };
 
 const isPaid = price !== undefined && price > 0;

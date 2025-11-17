@@ -34,7 +34,6 @@ This is a monorepo containing:
 
 - **packages/mona-kiosk** - The main Astro integration package
 - **packages/demo** - Example implementation using the blog template
-- **packages/demo-mona** - Advanced demo with custom authentication
 
 ## Quick Start
 
@@ -102,6 +101,33 @@ MonaKiosk is designed for **personal static sites** and **independent creators**
 - Real-time content updates
 - Complex permission systems
 - Enterprise SaaS applications
+
+### Important: File Upload Workflow
+
+**Downloadable files must be uploaded manually before deployment.** The file upload process is **not** part of the automated build pipeline.
+
+**Why manual upload?**
+
+1. **Keep repos clean** - We discourage storing binary assets (PDFs, ZIPs, videos) in Git repositories
+2. **User control** - You decide where to store files locally before uploading to Polar's CDN
+3. **Selective uploads** - Only upload what's changed (automatic checksum detection)
+
+**Workflow:**
+
+```bash
+# 1. Add downloadable files to your content
+# 2. Upload files to Polar (manual step)
+pnpm mona-kiosk upload
+
+# 3. Commit the state file
+git add mona-kiosk/state.json
+git commit -m "Add downloadable files"
+
+# 4. Build and deploy
+pnpm astro build
+```
+
+The build process reads file IDs from `mona-kiosk/state.json` - it doesn't upload files itself.
 
 ## Architecture Highlights
 

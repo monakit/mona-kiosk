@@ -162,6 +162,18 @@ Test card: `4242 4242 4242 4242` (any future date, any CVC)
 
 Attach files (PDFs, ZIPs, source code, etc.) to your paywalled content. Files are uploaded to Polar and provided as benefits to customers who purchase access.
 
+> **⚠️ Important: Manual Upload Required**
+>
+> File uploads are **NOT** part of the automated build pipeline. You must run `pnpm mona-kiosk upload` manually before deploying.
+>
+> **Why separate from build?**
+>
+> 1. **Keep repos clean** - Binary assets (PDFs, ZIPs, videos) shouldn't be committed to Git
+> 2. **User control** - You decide where files are stored locally before uploading to Polar's CDN
+> 3. **Selective uploads** - Only changed files are uploaded (checksum-based detection)
+>
+> The build process only reads file IDs from `mona-kiosk/state.json` - it never uploads files.
+
 ### 1. Add Downloads to Content
 
 In your content frontmatter:
@@ -315,11 +327,13 @@ When customers who purchased content visit the page **with a valid MonaKiosk cus
 **URL Token Support:**
 
 Users can access content directly via URL with session token:
+
 ```
 https://example.com/blog/premium-post?customer_session_token=polar_xxx
 ```
 
 The middleware automatically:
+
 - Validates the token with Polar's Customer Portal API
 - Creates session cookies for future visits (30 days)
 - Grants immediate access without requiring sign-in
