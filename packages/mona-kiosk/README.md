@@ -335,44 +335,8 @@ https://example.com/blog/premium-post?customer_session_token=polar_xxx
 The middleware automatically:
 
 - Validates the token with Polar's Customer Portal API
-- Creates session cookies for future visits (30 days)
+- Creates session cookies for future visits
 - Grants immediate access without requiring sign-in
-
-**Customization:**
-
-Override the default panel design per collection:
-
-```typescript
-monaKiosk({
-  collections: [{
-    include: "src/content/blog/**/*.md",
-    downloadableTemplate: `
-      <div class="my-downloads">
-        <h4>📥 Your Downloads</h4>
-        {{fileList}}
-      </div>
-
-      <style>
-        .my-downloads {
-          position: fixed;
-          top: 20px;
-          left: 20px;
-          background: white;
-          padding: 20px;
-          border-radius: 12px;
-          box-shadow: 0 4px 24px rgba(0,0,0,0.15);
-          max-width: 350px;
-        }
-      </style>
-    `
-  }]
-})
-```
-
-**Template variables:**
-
-- `{{fileList}}` - Rendered list of download links (required)
-- `{{fileCount}}` - Number of downloadable files (used in minimized button badge)
 
 The panel uses Polar's Customer Portal API to fetch files with **signed S3 URLs** that expire automatically. Session tokens can come from cookies or the `customer_session_token` URL parameter, making it easy to share direct access links.
 
@@ -571,6 +535,42 @@ monaKiosk({
 | Authenticated, not purchased | `true` | `false` | ❌ No | ✅ Yes | ❌ No |
 | Authenticated, purchased | `true` | `true` | ❌ No | ❌ No | ✅ Yes |
 
+### Custom Downloadable Panel Template
+
+Override the default floating panel design for downloadable files:
+
+```typescript
+monaKiosk({
+  collections: [{
+    include: "src/content/blog/**/*.md",
+    downloadableTemplate: `
+      <div class="my-downloads">
+        <h4>📥 Your Downloads</h4>
+        {{fileList}}
+      </div>
+
+      <style>
+        .my-downloads {
+          position: fixed;
+          top: 20px;
+          left: 20px;
+          background: white;
+          padding: 20px;
+          border-radius: 12px;
+          box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+          max-width: 350px;
+        }
+      </style>
+    `
+  }]
+})
+```
+
+**Available template variables:**
+
+- `{{fileList}}` - Rendered list of download links (required)
+- `{{fileCount}}` - Number of downloadable files (used in minimized button badge)
+
 ### Custom Product Names
 
 ```typescript
@@ -665,11 +665,24 @@ monaKiosk({
 
 ### Types
 
-```typescript
-import type { PayableEntry, PaywallState } from "mona-kiosk";
-import { isPayableEntry, PayableMetadata } from "mona-kiosk";
+MonaKiosk exports the following types and utilities:
 
-// In Astro.locals
+```typescript
+// Type imports
+import type {
+  PayableEntry,      // Collection entry with payable metadata
+  PaywallState,      // State object in Astro.locals
+  PreviewHandler,    // Custom preview function type
+  MonaKioskConfig    // Integration configuration
+} from "mona-kiosk";
+
+// Value imports
+import {
+  isPayableEntry,    // Type guard for payable content
+  PayableMetadata    // Zod schema for frontmatter
+} from "mona-kiosk";
+
+// PaywallState - Available in Astro.locals.paywall
 interface PaywallState {
   /** Whether the current content has a price and is protected */
   isPayable: boolean;
@@ -703,8 +716,10 @@ interface PaywallState {
   downloadableSection?: string;
 }
 
-// DownloadableFile type (extends Polar SDK's DownloadableRead)
-import type { DownloadableFile } from "mona-kiosk";
+// DownloadableFile type
+// Note: DownloadableFile is not directly exported from "mona-kiosk"
+// It's accessible through PaywallState (Astro.locals.paywall.downloadableFiles)
+// The type extends Polar SDK's DownloadableRead with additional fields:
 
 interface DownloadableFile {
   id: string;                    // Polar downloadable ID
@@ -727,6 +742,9 @@ interface DownloadableFile {
   isNew?: boolean;               // Marks newest version (auto-detected)
   isLegacy?: boolean;            // Marks older versions (auto-detected)
 }
+
+// Usage example:
+// const downloadables = Astro.locals.paywall?.downloadableFiles;
 
 // PayableMetadata schema (for content collections)
 const PayableMetadata = z.object({
@@ -862,10 +880,17 @@ console.log(ROUTES.SIGNIN_PAGE);   // "/mona-kiosk/signin"
 - Server-side validation - All access checks via Polar API
 - Session pairing - Token + customer ID for fast validation
 
-## How to Publish
+## Development
 
-- pnpm pack
-- pnpm publish
+### Publishing to npm
+
+```bash
+# Build and test the package locally
+pnpm pack
+
+# Publish to npm registry
+pnpm publish
+```
 
 ## License
 
