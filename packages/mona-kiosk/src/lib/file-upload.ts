@@ -69,7 +69,7 @@ export async function uploadFileToPolar(
   // Note: organizationId should NOT be passed when using an organization access token
   // The organization is already implicit in the token
   const fileCreate = await polar.files.create({
-    name: fileName,
+    name: encodeURI(fileName),
     mimeType: mimeType,
     size: fileSize,
     service: "downloadable",
