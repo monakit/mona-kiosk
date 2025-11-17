@@ -161,7 +161,7 @@ const PAYWALL_STYLES = `<style>
     transition: background 0.2s;
   }
   .mona-kiosk-checkout-btn:hover {
-    background: #2d3748;
+    background: #2d3748 !important;
   }
   .mona-kiosk-divider {
     display: flex;
