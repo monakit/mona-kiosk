@@ -645,7 +645,7 @@ export function renderDownloadableSection(params: {
     </svg>
   </div>
   <div class="mona-kiosk-download-info">
-    <p class="mona-kiosk-download-name">${file.name}${badge}</p>
+    <p class="mona-kiosk-download-name">${decodeURI(file.name)}${badge}</p>
     <p class="mona-kiosk-download-size">${file.sizeReadable}</p>
   </div>
 </a>
