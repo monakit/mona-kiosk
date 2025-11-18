@@ -140,7 +140,6 @@ The build process reads file IDs from `mona-kiosk/state.json` - it doesn't uploa
 ## Documentation
 
 - **[Full Documentation](./packages/mona-kiosk/README.md)** - Complete setup guide and API reference
-- **[CLAUDE.md](./packages/mona-kiosk/CLAUDE.md)** - Architecture and design insights
 
 ## Support This Project
 
