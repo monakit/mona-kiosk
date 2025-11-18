@@ -26,8 +26,8 @@ importers:
         specifier: ^5.15.4
         version: 5.15.4(@types/node@24.10.0)(@vercel/functions@2.2.13)(jiti@2.6.1)(lightningcss@1.30.2)(rollup@4.53.1)(tsx@4.20.6)(typescript@5.9.3)(yaml@2.8.1)
       mona-kiosk:
-        specifier: link:../mona-kiosk
-        version: link:../mona-kiosk
+        specifier: ^0.2.1
+        version: 0.2.1(astro@5.15.4(@types/node@24.10.0)(@vercel/functions@2.2.13)(jiti@2.6.1)(lightningcss@1.30.2)(rollup@4.53.1)(tsx@4.20.6)(typescript@5.9.3)(yaml@2.8.1))
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
@@ -2414,6 +2414,12 @@ packages:
 
   mona-kiosk@0.2.0:
     resolution: {integrity: sha512-XwiCQKXi12sz9QjzBzn8YBkqsrrWqDCWVx/nIGr+I1e7WC5ru4SJarY5g5rHLYUy5BoGnMKgmvUGAKAuqmwXjw==}
+    peerDependencies:
+      astro: ^5.12.0
+
+  mona-kiosk@0.2.1:
+    resolution: {integrity: sha512-aSodB1MY3YKKxM83tWs4lDe1oRT1hda3ZHQu4uo6krJ+LFY7XJyciq5Cdj5YCLwC22Kk38Etq5id+B6/bb/h/w==}
+    hasBin: true
     peerDependencies:
       astro: ^5.12.0
 
@@ -6037,6 +6043,16 @@ snapshots:
       github-slugger: 2.0.0
       gray-matter: 4.0.3
       tinyglobby: 0.2.15
+
+  mona-kiosk@0.2.1(astro@5.15.4(@types/node@24.10.0)(@vercel/functions@2.2.13)(jiti@2.6.1)(lightningcss@1.30.2)(rollup@4.53.1)(tsx@4.20.6)(typescript@5.9.3)(yaml@2.8.1)):
+    dependencies:
+      '@polar-sh/astro': 0.6.0(astro@5.15.4(@types/node@24.10.0)(@vercel/functions@2.2.13)(jiti@2.6.1)(lightningcss@1.30.2)(rollup@4.53.1)(tsx@4.20.6)(typescript@5.9.3)(yaml@2.8.1))
+      '@polar-sh/sdk': 0.41.1
+      astro: 5.15.4(@types/node@24.10.0)(@vercel/functions@2.2.13)(jiti@2.6.1)(lightningcss@1.30.2)(rollup@4.53.1)(tsx@4.20.6)(typescript@5.9.3)(yaml@2.8.1)
+      github-slugger: 2.0.0
+      gray-matter: 4.0.3
+      tinyglobby: 0.2.15
+      tsx: 4.20.6
 
   mrmime@2.0.1: {}
 
