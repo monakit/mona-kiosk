@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AstroIntegration } from "astro";
 import type { MonaKioskConfig } from "../integration/config";
+import { setGlobalConfig } from "../integration/config";
 
 /**
  * Load MonaKiosk config from astro.config.mjs/ts
@@ -43,8 +44,13 @@ export async function loadConfigFromAstro(cwd: string = process.cwd()) {
       for (const integration of astroConfig.integrations) {
         if (isMonaKioskIntegration(integration)) {
           foundMonaKiosk = true;
-          // Extract config from the integration
-          await extractMonaKioskConfig(integration);
+          const monaKioskConfig = extractMonaKioskConfig(integration);
+          if (!monaKioskConfig) {
+            throw new Error(
+              "MonaKiosk config missing from integration. Please ensure mona-kiosk is updated.",
+            );
+          }
+          setGlobalConfig(monaKioskConfig, { astroI18n: astroConfig.i18n });
           console.log(`✓ Loaded config from ${configFile}`);
           return;
         }
@@ -84,47 +90,14 @@ function isMonaKioskIntegration(integration: AstroIntegration): boolean {
  * Extract MonaKiosk config from integration
  * The integration function already has the config bound to it
  */
-async function extractMonaKioskConfig(
+function extractMonaKioskConfig(
   integration: AstroIntegration,
-): Promise<MonaKioskConfig | null> {
-  // The integration object has hooks that were set up with the config
-  // We need to access the config that was passed to monaKiosk()
-
-  // Try to call the integration's astro:config:setup hook to extract config
-  // This is a bit hacky, but necessary since integrations don't expose their config
-  const mockAstroConfig: any = {
-    integrations: [],
-    addMiddleware: () => {},
-    injectRoute: () => {},
-    logger: {
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-    },
-  };
-
-  const mockCommand = "build";
-  const mockIsRestart = false;
-
-  try {
-    // Call the setup hook which will call setGlobalConfig
-    if (integration.hooks?.["astro:config:setup"]) {
-      await integration.hooks["astro:config:setup"]({
-        config: mockAstroConfig,
-        command: mockCommand,
-        isRestart: mockIsRestart,
-        addMiddleware: () => {},
-        injectRoute: () => {},
-        logger: mockAstroConfig.logger,
-        updateConfig: () => ({}),
-      } as any);
-
-      // Config should now be set globally
-      return null; // Config is already set via setGlobalConfig
+): MonaKioskConfig | null {
+  const config = (
+    integration as AstroIntegration & {
+      __monaKioskConfig?: MonaKioskConfig;
     }
-  } catch (error) {
-    console.warn("Warning: Failed to extract config from integration:", error);
-  }
+  ).__monaKioskConfig;
 
-  return null;
+  return config ?? null;
 }

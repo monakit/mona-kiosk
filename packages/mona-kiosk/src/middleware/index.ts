@@ -1,4 +1,3 @@
-import type { CollectionEntry } from "astro:content";
 import { getEntry } from "astro:content";
 import { defineMiddleware } from "astro:middleware";
 import type { MiddlewareHandler } from "astro";
@@ -15,6 +14,7 @@ import {
   getDownloadableFiles,
 } from "../lib/downloadables";
 import { renderErrorHtml } from "../lib/error-renderer";
+import { buildUrlPatterns, parsePathname } from "../lib/i18n";
 import { findProductByContentId } from "../lib/polar-client";
 import {
   buildTemplateContext,
@@ -121,22 +121,6 @@ async function injectHtmlBeforeBodyClose(
 }
 
 /**
- * Convert include pattern to URL pattern
- * Example: "src/content/blogs/**\/*.md" -> "/blogs/**\/*"
- */
-function includePatternToUrlPattern(includePattern: string): string {
-  return (
-    includePattern
-      .replace(/\\/g, "/")
-      // Remove src/content/ prefix
-      .replace(/^src\/content\//, "/")
-      // Remove file extensions (*.md, *.mdx, *.{md,mdx})
-      .replace(/\*\.\{[^}]+\}$/, "*")
-      .replace(/\*\.(md|mdx)$/, "*")
-  );
-}
-
-/**
  * Check if URL matches a pattern
  */
 function matchesUrlPattern(pathname: string, pattern: string): boolean {
@@ -157,6 +141,7 @@ function matchesUrlPattern(pathname: string, pattern: string): boolean {
 function shouldProcessUrl(
   pathname: string,
   includePatterns: string[],
+  i18n?: ResolvedMonaKioskConfig["i18n"],
 ): boolean {
   // Skip API routes, assets, and other non-content paths
   if (
@@ -169,7 +154,7 @@ function shouldProcessUrl(
   }
 
   // Convert include patterns to URL patterns and check
-  const urlPatterns = includePatterns.map(includePatternToUrlPattern);
+  const urlPatterns = buildUrlPatterns(includePatterns, i18n);
   return urlPatterns.some((pattern) => matchesUrlPattern(pathname, pattern));
 }
 
@@ -181,12 +166,9 @@ async function getContentInfoFromPath(
 ): Promise<ContentInfo | null> {
   const config = getGlobalConfig();
 
-  // Try to match pathname pattern: /:collection/:slug (slug can have multiple segments)
-  // Example: /blogs/2025-08/groq-code-cli-internal -> collection: blogs, slug: 2025-08/groq-code-cli-internal
-  const match = pathname.match(/^\/([^/]+)\/(.+?)\/?$/);
-  if (!match) return null;
-
-  const [, collection, slug] = match;
+  const parsed = parsePathname(pathname, config.i18n);
+  if (!parsed) return null;
+  const { collection, slug, localePath } = parsed;
 
   if (slug.includes(".")) {
     return null;
@@ -199,9 +181,8 @@ async function getContentInfoFromPath(
   if (!collectionConfig) return null;
 
   try {
-    const entry = (await getEntry(collection as never, slug)) as
-      | CollectionEntry<never>
-      | undefined;
+    const entryKey = localePath ? `${localePath}/${slug}` : slug;
+    const entry = (await getEntry(collection as never, entryKey)) as unknown;
 
     if (!entry) return null;
 
@@ -234,7 +215,7 @@ async function getContentInfoFromPath(
       entry,
       collection,
       collectionConfig,
-      body: entry.body ?? "",
+      body: entry.body,
     };
   } catch (error) {
     console.error("Error loading content:", error);
@@ -299,7 +280,7 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     const includePatterns = config.collections.map((c) => c.include);
 
     // Skip URLs that don't match configured include patterns
-    if (!shouldProcessUrl(url.pathname, includePatterns)) {
+    if (!shouldProcessUrl(url.pathname, includePatterns, config.i18n)) {
       return next();
     }
 

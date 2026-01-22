@@ -1,4 +1,3 @@
-import type { CollectionEntry } from "astro:content";
 import { z } from "astro/zod";
 
 /**
@@ -57,22 +56,44 @@ export interface PayableContent {
 /**
  * Type for Astro content collection entries with payable content
  */
-export type PayableEntry<T extends string = string> = CollectionEntry<T> & {
+export type PayableEntry = {
+  id: string;
+  slug?: string;
+  body: string;
+  rendered?: { html: string } | null;
   data: PayableContent;
 };
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null;
+}
 
 /**
  * Type guard to check if a collection entry has payable metadata
  */
-export function isPayableEntry<T extends string>(
-  entry: CollectionEntry<T>,
-): entry is PayableEntry<T> {
-  const data = entry.data as unknown;
-  return (
-    data != null &&
-    typeof data === "object" &&
-    "price" in data &&
-    typeof data.price === "number" &&
-    data.price > 0
-  );
+export function isPayableEntry(entry: unknown): entry is PayableEntry {
+  if (!isRecord(entry)) {
+    return false;
+  }
+
+  if (typeof entry.id !== "string") {
+    return false;
+  }
+
+  if (typeof entry.body !== "string") {
+    return false;
+  }
+
+  if ("slug" in entry && entry.slug != null && typeof entry.slug !== "string") {
+    return false;
+  }
+
+  if (!isRecord(entry.data)) {
+    return false;
+  }
+
+  const price = entry.data.price;
+  return typeof price === "number" && price > 0;
 }

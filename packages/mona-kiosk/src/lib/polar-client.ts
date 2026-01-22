@@ -6,7 +6,6 @@ import type { ProductPriceFixedCreate } from "@polar-sh/sdk/models/components/pr
 import type { ProductsListRequest } from "@polar-sh/sdk/models/operations/productslist.js";
 import { POLAR_API_PAGE_SIZE } from "../constants";
 import { getGlobalConfig } from "../integration/config";
-import { generateContentIdCandidates } from "./content-id";
 import {
   findByMetadataCandidates,
   normaliseMetadataValue,
@@ -16,6 +15,10 @@ let polarClientInstance: Polar | null = null;
 let polarClientProxy: Polar | null = null;
 const productMapping = new Map<string, string>();
 const productToContentMapping = new Map<string, string>();
+
+function normaliseContentId(value: string): string {
+  return value.replace(/\\/g, "/");
+}
 
 function assertBenefitType(
   benefit: Benefit,
@@ -90,14 +93,8 @@ export function setProductMapping(
 }
 
 export function getProductIdForContent(contentId: string): string | undefined {
-  for (const candidate of generateContentIdCandidates(contentId)) {
-    const productId = productMapping.get(candidate);
-    if (productId) {
-      return productId;
-    }
-  }
-
-  return undefined;
+  const normalized = normaliseContentId(contentId);
+  return productMapping.get(normalized);
 }
 
 export function getContentIdForProduct(productId: string): string | undefined {
@@ -111,23 +108,9 @@ export function getAllProductMappings(): Map<string, string> {
 export function cacheProductMappings(params: {
   canonicalId: string;
   productId: string;
-  additionalCandidates?: Iterable<string>;
 }) {
-  const { canonicalId, productId, additionalCandidates } = params;
+  const { canonicalId, productId } = params;
   setProductMapping(canonicalId, productId, { canonical: true });
-
-  const candidates = new Set(generateContentIdCandidates(canonicalId));
-  if (additionalCandidates) {
-    for (const candidate of additionalCandidates) {
-      candidates.add(candidate.replace(/\\/g, "/"));
-    }
-  }
-
-  candidates.delete(canonicalId);
-
-  for (const candidate of candidates) {
-    setProductMapping(candidate, productId);
-  }
 }
 
 function normaliseTimestamp(value: unknown): number | null {
@@ -201,7 +184,8 @@ export async function findProductByContentId(
 
   // Query Polar API
   const config = getGlobalConfig();
-  const candidates = generateContentIdCandidates(contentId);
+  const canonicalId = normaliseContentId(contentId);
+  const candidates = [canonicalId];
   const product = await findExistingProduct(
     candidates,
     config.polar.organizationId,
@@ -211,13 +195,13 @@ export async function findProductByContentId(
     return null;
   }
 
-  const metadataContentId =
-    normaliseMetadataValue(product.metadata?.content_id) ?? contentId;
+  const metadataContentId = normaliseContentId(
+    normaliseMetadataValue(product.metadata?.content_id) ?? canonicalId,
+  );
 
   cacheProductMappings({
     canonicalId: metadataContentId,
     productId: product.id,
-    additionalCandidates: candidates,
   });
 
   return product.id;
@@ -287,27 +271,19 @@ async function findBenefitsForContent(params: {
 
   // Search once for all benefits with this content_id
   const allBenefits: Benefit[] = [];
-  const candidates = generateContentIdCandidates(contentId);
+  const canonicalId = normaliseContentId(contentId);
+  const iterator = await polar.benefits.list({
+    organizationId,
+    metadata: { content_id: canonicalId },
+    limit: POLAR_API_PAGE_SIZE,
+  });
 
-  for (const candidate of candidates) {
-    const iterator = await polar.benefits.list({
-      organizationId,
-      metadata: { content_id: candidate },
-      limit: POLAR_API_PAGE_SIZE,
-    });
-
-    for await (const page of iterator) {
-      const items = page.result?.items ?? [];
-      for (const item of items) {
-        if (normaliseMetadataValue(item.metadata?.content_id) === candidate) {
-          allBenefits.push(item);
-        }
+  for await (const page of iterator) {
+    const items = page.result?.items ?? [];
+    for (const item of items) {
+      if (normaliseMetadataValue(item.metadata?.content_id) === canonicalId) {
+        allBenefits.push(item);
       }
-    }
-
-    // If we found any benefits, stop searching candidates
-    if (allBenefits.length > 0) {
-      break;
     }
   }
 
@@ -624,15 +600,13 @@ export async function upsertProduct(data: {
   hasDownloads?: boolean;
 }): Promise<Product> {
   const organizationId = getGlobalConfig().polar.organizationId;
-  const existing = await findExistingProduct(
-    generateContentIdCandidates(data.contentId),
-    organizationId,
-  );
+  const canonicalId = normaliseContentId(data.contentId);
+  const existing = await findExistingProduct([canonicalId], organizationId);
 
   // Build metadata with pricing model
   const pricingModel = data.interval ? "subscription" : "one_time";
   const metadata: Record<string, string | number> = {
-    content_id: data.contentId,
+    content_id: canonicalId,
     collection: data.collection,
     updatedAt: data.updatedAt,
     pricing_model: pricingModel,

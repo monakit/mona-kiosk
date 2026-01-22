@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import type { AstroIntegration } from "astro";
+import type { AstroConfig, AstroIntegration } from "astro";
 import { ROUTES } from "../constants";
 import { syncProductsToPolar } from "../lib/product-sync";
 import type { MonaKioskConfig, ResolvedMonaKioskConfig } from "./config";
@@ -7,18 +7,22 @@ import { setGlobalConfig } from "./config";
 
 export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
   let resolvedConfig: ResolvedMonaKioskConfig | null = null;
+  let astroI18n: AstroConfig["i18n"] | undefined;
 
-  return {
+  const integration = {
     name: "mona-kiosk",
+    __monaKioskConfig: config,
     hooks: {
       "astro:config:setup": ({
         addMiddleware,
+        config: astroConfig,
         injectRoute,
         logger,
         updateConfig,
       }) => {
+        astroI18n = astroConfig.i18n;
         // Config stored in globalThis (accessible across contexts, preserves function handlers)
-        resolvedConfig = setGlobalConfig(config);
+        resolvedConfig = setGlobalConfig(config, { astroI18n });
 
         // Add virtual module plugin to bundle config for production
         updateConfig({
@@ -32,7 +36,8 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
                 },
                 load(id) {
                   if (id === "\0virtual:mona-kiosk-config") {
-                    const cfg = resolvedConfig || setGlobalConfig(config);
+                    const cfg =
+                      resolvedConfig || setGlobalConfig(config, { astroI18n });
 
                     // Serialize functions as code strings
                     const isAuthFn = cfg.isAuthenticated
@@ -65,6 +70,7 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
                       collections: [${collectionsCode}],
                       productNameTemplate: ${JSON.stringify(cfg.productNameTemplate)},
                       signinPagePath: ${JSON.stringify(cfg.signinPagePath)},
+                      i18n: ${JSON.stringify(cfg.i18n)},
                       isAuthenticated: ${isAuthFn},
                       checkAccess: ${checkAccessFn},
                     };
@@ -129,7 +135,7 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
 
       "astro:config:done": async ({ logger }) => {
         if (!resolvedConfig) {
-          resolvedConfig = setGlobalConfig(config);
+          resolvedConfig = setGlobalConfig(config, { astroI18n });
         }
 
         try {
@@ -140,5 +146,7 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
         }
       },
     },
-  };
+  } satisfies AstroIntegration & { __monaKioskConfig: MonaKioskConfig };
+
+  return integration;
 }
