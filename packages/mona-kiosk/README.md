@@ -158,6 +158,28 @@ npm run dev
 
 Test card: `4242 4242 4242 4242` (any future date, any CVC)
 
+## Internationalization (i18n)
+
+MonaKiosk supports Astro i18n routing. Follow Astro's official i18n content structure so routes and content IDs stay consistent.
+
+**Recommended content layout (per Astro):**
+
+```text
+src/content/
+  blogs/
+    en/
+      post-1.md
+    ja/
+      post-1.md
+```
+
+**Notes:**
+
+- When i18n is enabled in `astro.config.mjs`, MonaKiosk uses the locale path as part of the content ID (for example, `blogs/en/post-1`).
+- When i18n is not configured, MonaKiosk uses the non-localized path (for example, `blogs/post-1`).
+
+For more information, please refer to Astro's i18n documentation: https://docs.astro.build/en/recipes/i18n/
+
 ## Downloadable Files
 
 Attach files (PDFs, ZIPs, source code, etc.) to your paywalled content. Files are uploaded to Polar and provided as benefits to customers who purchase access.
