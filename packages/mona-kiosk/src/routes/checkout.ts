@@ -2,6 +2,7 @@ import { Checkout } from "@polar-sh/astro";
 import type { APIContext } from "astro";
 import { COOKIE_NAMES } from "../constants";
 import { getGlobalConfig } from "../integration/config";
+import { buildContentUrl } from "../lib/i18n";
 import { findProductByContentId } from "../lib/polar-client";
 
 /**
@@ -47,7 +48,11 @@ export async function GET(context: APIContext) {
   // Use Polar's Checkout utility to handle redirect
   const checkoutHandler = Checkout({
     accessToken: config.polar.accessToken,
-    successUrl: `${url.origin}/${contentId}`,
+    successUrl: buildContentUrl({
+      siteUrl: url.origin,
+      canonicalId: contentId,
+      i18n: config.i18n,
+    }),
     server: config.polar.server,
   });
 

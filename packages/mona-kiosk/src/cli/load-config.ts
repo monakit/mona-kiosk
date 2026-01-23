@@ -3,6 +3,13 @@ import { pathToFileURL } from "node:url";
 import type { AstroIntegration } from "astro";
 import type { MonaKioskConfig } from "../integration/config";
 
+type ConfigSetupHook = NonNullable<
+  NonNullable<AstroIntegration["hooks"]>["astro:config:setup"]
+>;
+type ConfigSetupArgs = ConfigSetupHook extends (...args: infer Args) => unknown
+  ? Args[0]
+  : never;
+
 /**
  * Load MonaKiosk config from astro.config.mjs/ts
  * This allows the CLI to access the same config as the Astro integration
@@ -44,7 +51,7 @@ export async function loadConfigFromAstro(cwd: string = process.cwd()) {
         if (isMonaKioskIntegration(integration)) {
           foundMonaKiosk = true;
           // Extract config from the integration
-          await extractMonaKioskConfig(integration);
+          await extractMonaKioskConfig(integration, astroConfig);
           console.log(`✓ Loaded config from ${configFile}`);
           return;
         }
@@ -86,38 +93,53 @@ function isMonaKioskIntegration(integration: AstroIntegration): boolean {
  */
 async function extractMonaKioskConfig(
   integration: AstroIntegration,
+  astroConfig: ConfigSetupArgs["config"],
 ): Promise<MonaKioskConfig | null> {
   // The integration object has hooks that were set up with the config
   // We need to access the config that was passed to monaKiosk()
 
   // Try to call the integration's astro:config:setup hook to extract config
   // This is a bit hacky, but necessary since integrations don't expose their config
-  const mockAstroConfig: any = {
-    integrations: [],
-    addMiddleware: () => {},
-    injectRoute: () => {},
-    logger: {
-      info: () => {},
-      warn: () => {},
-      error: () => {},
+  const loggerOptions: ConfigSetupArgs["logger"]["options"] = {
+    level: "info",
+    dest: {
+      write: () => true,
     },
   };
 
-  const mockCommand = "build";
-  const mockIsRestart = false;
+  const createLogger = (label: string): ConfigSetupArgs["logger"] => ({
+    options: loggerOptions,
+    label,
+    fork: (nextLabel: string) => createLogger(nextLabel),
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    debug: () => {},
+  });
+
+  const mockCommand: ConfigSetupArgs["command"] = "build";
+  const mockIsRestart: ConfigSetupArgs["isRestart"] = false;
 
   try {
     // Call the setup hook which will call setGlobalConfig
     if (integration.hooks?.["astro:config:setup"]) {
-      await integration.hooks["astro:config:setup"]({
-        config: mockAstroConfig,
+      const setupArgs: ConfigSetupArgs = {
+        config: astroConfig,
         command: mockCommand,
         isRestart: mockIsRestart,
+        logger: createLogger("mona-kiosk"),
+        updateConfig: () => astroConfig,
         addMiddleware: () => {},
         injectRoute: () => {},
-        logger: mockAstroConfig.logger,
-        updateConfig: () => ({}),
-      } as any);
+        addRenderer: () => {},
+        addClientDirective: () => {},
+        addDevToolbarApp: () => {},
+        addWatchFile: () => {},
+        injectScript: () => {},
+        createCodegenDir: () => new URL("file:///tmp/"),
+      };
+
+      await integration.hooks["astro:config:setup"](setupArgs);
 
       // Config should now be set globally
       return null; // Config is already set via setGlobalConfig

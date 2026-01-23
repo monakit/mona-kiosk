@@ -4,6 +4,7 @@ import matter from "gray-matter";
 import { glob } from "tinyglobby";
 import type { ResolvedMonaKioskConfig } from "../integration/config";
 import { pathToContentId } from "./content-id";
+import { buildContentUrl } from "./i18n";
 import { cacheProductMappings, upsertProduct } from "./polar-client";
 import { normalizeFileKey, readStateFile } from "./state-manager";
 
@@ -109,7 +110,11 @@ async function processPayableFile(
   }
 
   // Generate content URL
-  const contentUrl = `${config.siteUrl}/${canonicalId}`;
+  const contentUrl = buildContentUrl({
+    siteUrl: config.siteUrl,
+    canonicalId,
+    i18n: config.i18n,
+  });
 
   // Create or update product based on pricing model
   const productData = {

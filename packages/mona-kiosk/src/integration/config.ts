@@ -1,4 +1,5 @@
-import type { APIContext } from "astro";
+import type { APIContext, AstroConfig } from "astro";
+import { type ResolvedI18nConfig, resolveI18nConfig } from "../lib/i18n";
 import type { PreviewHandler } from "../lib/templates";
 
 export interface PolarConfig {
@@ -40,6 +41,7 @@ export type ResolvedMonaKioskConfig = Omit<
   collections: ResolvedCollectionConfig[];
   signinPagePath: string;
   siteUrl: string;
+  i18n?: ResolvedI18nConfig | null;
 };
 
 // Dev server: Astro middleware runs in isolated V8 context, can't access module variables
@@ -90,19 +92,24 @@ function resolveCollectionConfig(
   };
 }
 
-function resolveConfig(input: MonaKioskConfig): ResolvedMonaKioskConfig {
+function resolveConfig(
+  input: MonaKioskConfig,
+  options?: { astroI18n?: AstroConfig["i18n"] },
+): ResolvedMonaKioskConfig {
   return {
     ...input,
     collections: input.collections.map(resolveCollectionConfig),
     signinPagePath: input.signinPagePath ?? "/mona-kiosk/signin",
     siteUrl: input.siteUrl,
+    i18n: resolveI18nConfig(options?.astroI18n),
   };
 }
 
 export function setGlobalConfig(
   input: MonaKioskConfig,
+  options?: { astroI18n?: AstroConfig["i18n"] },
 ): ResolvedMonaKioskConfig {
-  const resolved = resolveConfig(input);
+  const resolved = resolveConfig(input, options);
   config = resolved; // Local cache
   globalThis.__MONA_KIOSK_CONFIG__ = resolved; // Cross-context storage (preserves function handlers)
 
