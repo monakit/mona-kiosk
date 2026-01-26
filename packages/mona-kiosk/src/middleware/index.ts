@@ -1,12 +1,20 @@
 import { getEntry } from "astro:content";
 import { defineMiddleware } from "astro:middleware";
 import type { MiddlewareHandler } from "astro";
-import { COOKIE_NAMES } from "../constants";
+import { ACCESS_COOKIE_OPTIONS, COOKIE_NAMES } from "../constants";
 import type {
+  InheritAccessContext,
   ResolvedCollectionConfig,
   ResolvedMonaKioskConfig,
 } from "../integration/config";
 import { getGlobalConfig } from "../integration/config";
+import {
+  type AccessCookiePayload,
+  decodeAccessCookie,
+  encodeAccessCookie,
+  getAccessCookieEntry,
+  upsertAccessCookie,
+} from "../lib/access-cookie";
 import { validateCustomerAccess } from "../lib/auth";
 import { entryToContentId } from "../lib/content-id";
 import {
@@ -38,6 +46,12 @@ interface ContentInfo {
   collection: string;
   collectionConfig: ResolvedCollectionConfig;
   body: string;
+  /** If this content inherits access, this is the parent's content ID */
+  parentContentId?: string;
+  /** If inheriting access, this is the parent's price */
+  parentPrice?: number;
+  /** If inheriting access, this is the parent's currency */
+  parentCurrency?: string;
 }
 
 /**
@@ -163,6 +177,9 @@ function shouldProcessUrl(
  */
 async function getContentInfoFromPath(
   pathname: string,
+  url: URL,
+  accessCookie: AccessCookiePayload | null,
+  now: number,
 ): Promise<ContentInfo | null> {
   const config = getGlobalConfig();
 
@@ -175,31 +192,113 @@ async function getContentInfoFromPath(
   }
 
   // Check if collection is configured as payable
-  const collectionConfig = config.collections.find(
-    (c) => c.name === collection,
-  );
+  // We need to match both collection name AND URL pattern (for cases where multiple
+  // configs share the same base collection, e.g., courses/toc.md vs courses/chapters)
+  const collectionConfig = config.collections.find((c) => {
+    if (c.name !== collection) return false;
+
+    // Build URL pattern from include pattern and check if current path matches
+    const urlPattern = c.include
+      .replace(/\\/g, "/")
+      .replace(/^src\/content\//, "/")
+      .replace(/\*\.\{[^}]+\}$/, "*")
+      .replace(/\*\.(md|mdx)$/, "*");
+
+    // Convert glob to regex
+    const regexPattern = urlPattern
+      .replace(/\*\*/g, "___DOUBLESTAR___")
+      .replace(/\*/g, "[^/]*")
+      .replace(/___DOUBLESTAR___/g, ".*");
+
+    const regex = new RegExp(`^${regexPattern}/?$`);
+    return regex.test(pathname);
+  });
   if (!collectionConfig) return null;
 
   try {
     const entryKey = localePath ? `${localePath}/${slug}` : slug;
-    const entry = (await getEntry(collection as never, entryKey)) as unknown;
+    // Use astroCollection to load from the correct Astro collection
+    const astroCollection = collectionConfig.astroCollection;
+    const entry = (await getEntry(
+      astroCollection as never,
+      entryKey,
+    )) as unknown;
 
     if (!entry) return null;
-
-    // Check if content has price field (is payable)
-    if (!isPayableEntry(entry)) {
-      return null;
-    }
 
     // Generate canonical content ID (collection/slug)
     const canonicalId = entryToContentId({
       collection,
-      entryId: entry.id,
-      entrySlug: entry.slug,
+      entryId: (entry as { id: string }).id,
+      entrySlug: (entry as { slug?: string }).slug,
     });
 
+    // Handle inheritAccess: child content inherits access from parent
+    if (collectionConfig.inheritAccess) {
+      const context: InheritAccessContext = {
+        contentId: canonicalId,
+        collection,
+        slug,
+        url,
+      };
+
+      const parentContentId =
+        collectionConfig.inheritAccess.parentContentId(context);
+
+      // If parentContentId returns null, content is free
+      if (!parentContentId) {
+        return null;
+      }
+
+      const cachedAccess = getAccessCookieEntry({
+        payload: accessCookie,
+        contentId: parentContentId,
+        now,
+      });
+      const cachedProductId = cachedAccess?.productId ?? null;
+
+      // Find parent's product in Polar if not cached
+      const parentProductId =
+        cachedProductId ?? (await findProductByContentId(parentContentId));
+
+      if (!parentProductId) {
+        // Parent product not found - treat as free (no paywall)
+        console.warn(
+          `[MonaKiosk] Parent product not found for: ${parentContentId}. Content will be treated as free.`,
+        );
+        return null;
+      }
+
+      // Get parent's price info from Polar (we need to query the product)
+      // For now, we'll mark it as payable and let the access check handle it
+      // The price will be fetched from the parent's product
+      return {
+        isPayable: true,
+        productId: parentProductId,
+        contentId: parentContentId, // Use parent's content ID for access check
+        entry: entry as PayableEntry, // Child entry (for body/content)
+        collection,
+        collectionConfig,
+        body: (entry as { body: string }).body,
+        parentContentId,
+      };
+    }
+
+    // Normal flow: Check if content has price field (is payable)
+    if (!isPayableEntry(entry)) {
+      return null;
+    }
+
+    const cachedAccess = getAccessCookieEntry({
+      payload: accessCookie,
+      contentId: canonicalId,
+      now,
+    });
+    const cachedProductId = cachedAccess?.productId ?? null;
+
     // Query Polar to get product ID by content_id metadata
-    const productId = await findProductByContentId(canonicalId);
+    const productId =
+      cachedProductId ?? (await findProductByContentId(canonicalId));
 
     if (!productId) {
       console.error(
@@ -284,8 +383,23 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
       return next();
     }
 
+    const now = Math.floor(Date.now() / 1000);
+    const accessCookieSecret = config.accessCookieSecret;
+    const accessCookie = accessCookieSecret
+      ? decodeAccessCookie({
+          value: cookies.get(COOKIE_NAMES.ACCESS)?.value,
+          secret: accessCookieSecret,
+          now,
+        })
+      : null;
+
     // Check if current path is for payable content
-    const contentInfo = await getContentInfoFromPath(url.pathname);
+    const contentInfo = await getContentInfoFromPath(
+      url.pathname,
+      url,
+      accessCookie,
+      now,
+    );
 
     // If not payable content, continue normally
     if (!contentInfo || !contentInfo.isPayable) {
@@ -331,8 +445,17 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
       }
     }
 
+    const accessCookieEntry = getAccessCookieEntry({
+      payload: accessCookie,
+      contentId: contentInfo.contentId,
+      now,
+    });
+    const hasCookieAccess = !!accessCookieEntry;
+
     // Check authentication
-    if (config.isAuthenticated) {
+    if (hasCookieAccess) {
+      isAuthenticated = true;
+    } else if (config.isAuthenticated) {
       // Use custom auth check
       isAuthenticated = await config.isAuthenticated(context);
     } else {
@@ -341,7 +464,9 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     }
 
     // Check access (only if authenticated)
-    if (isAuthenticated && customerToken && customerId) {
+    if (hasCookieAccess) {
+      hasAccess = true;
+    } else if (isAuthenticated && customerToken && customerId) {
       if (config.checkAccess) {
         // Use custom access check
         hasAccess = await config.checkAccess(context, contentInfo.contentId);
@@ -354,9 +479,30 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
       }
     }
 
+    if (accessCookieSecret && hasAccess) {
+      const nextPayload = upsertAccessCookie({
+        payload: accessCookie,
+        contentId: contentInfo.contentId,
+        productId: contentInfo.productId,
+        now,
+        ttlSeconds: config.accessCookieTtlSeconds,
+        maxEntries: config.accessCookieMaxEntries,
+      });
+      const value = encodeAccessCookie({
+        payload: nextPayload,
+        secret: accessCookieSecret,
+      });
+      cookies.set(COOKIE_NAMES.ACCESS, value, {
+        ...ACCESS_COOKIE_OPTIONS,
+        expires: new Date(nextPayload.exp * 1000),
+      });
+    }
+
     // Only generate preview if user doesn't have access
+    // Skip preview for inheritAccess content (child content doesn't have its own preview)
     let preview: string | undefined;
-    if (!hasAccess) {
+    const isInheritedAccess = !!contentInfo.parentContentId;
+    if (!hasAccess && !isInheritedAccess) {
       preview = await buildPreview({
         collection: contentInfo.collection,
         entry: contentInfo.entry,
@@ -369,16 +515,22 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     }
 
     // Set paywall state in locals for page to access
+    // For inheritAccess content, use parent's info (no price/interval on child)
     const interval =
-      "interval" in contentInfo.entry.data
+      !isInheritedAccess && "interval" in contentInfo.entry.data
         ? contentInfo.entry.data.interval
         : undefined;
 
-    const hasDownloads = !!(
-      contentInfo.entry.data.downloads &&
-      contentInfo.entry.data.downloads.length > 0
-    );
-    const downloadCount = contentInfo.entry.data.downloads?.length || 0;
+    // For inheritAccess content, downloads are on parent, not child
+    const hasDownloads =
+      !isInheritedAccess &&
+      !!(
+        contentInfo.entry.data.downloads &&
+        contentInfo.entry.data.downloads.length > 0
+      );
+    const downloadCount = isInheritedAccess
+      ? 0
+      : contentInfo.entry.data.downloads?.length || 0;
 
     // Fetch downloadable files if user has access
     let downloadableFiles: DownloadableFile[] | undefined;
@@ -408,8 +560,9 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
       hasAccess,
       productId: contentInfo.productId,
       contentId: contentInfo.contentId,
-      price: contentInfo.entry.data.price,
-      currency: contentInfo.entry.data.currency,
+      // For inheritAccess content, price is on parent, not child
+      price: isInheritedAccess ? undefined : contentInfo.entry.data.price,
+      currency: isInheritedAccess ? undefined : contentInfo.entry.data.currency,
       interval,
       title: contentInfo.entry.data.title,
       description: contentInfo.entry.data.description,

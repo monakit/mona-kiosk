@@ -7,8 +7,14 @@ import { defineConfig } from "astro/config";
 import { monaKiosk } from "mona-kiosk";
 import { loadEnv } from "vite";
 
-const { POLAR_ACCESS_TOKEN, ORGANIZATION_SLUG, ORGANIZATION_ID, POLAR_SERVER } =
-  loadEnv(process.env.NODE_ENV, process.cwd(), "");
+const {
+  POLAR_ACCESS_TOKEN,
+  ORGANIZATION_SLUG,
+  ORGANIZATION_ID,
+  POLAR_SERVER,
+  ACCESS_COOKIE_SECRET,
+  SITE_URL,
+} = loadEnv(process.env.NODE_ENV, process.cwd(), "");
 
 // https://astro.build/config
 export default defineConfig({
@@ -17,7 +23,7 @@ export default defineConfig({
   },
 
   output: "server",
-  site: "https://example.com",
+  site: SITE_URL || "http://localhost:4321",
 
   integrations: [
     mdx(),
@@ -33,8 +39,23 @@ export default defineConfig({
         {
           include: "src/content/blog/**/*.md",
         },
+        {
+          include: "src/content/courses/**/toc.md",
+          contentIdToUrl: (contentId) => contentId.replace(/\/toc$/, ""),
+        },
+        {
+          include: "src/content/courses/**/[0-9][0-9]-*.md",
+          astroCollection: "courseChapters",
+          inheritAccess: {
+            parentContentId: ({ slug }) => {
+              const courseId = slug.split("/")[0];
+              return `courses/${courseId}/toc`;
+            },
+          },
+        },
       ],
-      siteUrl: "https://example.com",
+      siteUrl: SITE_URL || "http://localhost:4321",
+      accessCookieSecret: ACCESS_COOKIE_SECRET,
     }),
   ],
 

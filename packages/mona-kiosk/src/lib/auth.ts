@@ -165,6 +165,7 @@ export function clearSessionCookie(cookies: AstroCookies) {
   cookies.delete(COOKIE_NAMES.SESSION, options);
   cookies.delete(COOKIE_NAMES.CUSTOMER_ID, options);
   cookies.delete(COOKIE_NAMES.CUSTOMER_EMAIL, options);
+  cookies.delete(COOKIE_NAMES.ACCESS, options);
 }
 
 export function hasPolarSession(cookies: AstroCookies) {

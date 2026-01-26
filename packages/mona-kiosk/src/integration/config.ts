@@ -9,11 +9,55 @@ export interface PolarConfig {
   server: "production" | "sandbox";
 }
 
+/**
+ * Context passed to inheritAccess.parentContentId resolver
+ */
+export interface InheritAccessContext {
+  /** Child's canonical content ID (e.g., "courseChapters/my-course/01-intro") */
+  contentId: string;
+  /** Child's collection name */
+  collection: string;
+  /** Child's slug (e.g., "my-course/01-intro") */
+  slug: string;
+  /** Request URL */
+  url: URL;
+}
+
+/**
+ * Configuration for content that inherits access from parent content
+ */
+export interface InheritAccessConfig {
+  /**
+   * Function to resolve parent's content ID from child's info
+   * @returns Parent's content ID (e.g., "courses/my-course/toc"), or null if should be free
+   */
+  parentContentId: (context: InheritAccessContext) => string | null;
+}
+
 export interface CollectionConfig {
   include: string;
   paywallTemplate?: string;
   downloadableTemplate?: string;
   previewHandler?: PreviewHandler;
+  /**
+   * For child content that inherits access from parent content.
+   * When set, this collection's content will check parent's access instead of its own.
+   * Products are NOT created for collections with inheritAccess.
+   */
+  inheritAccess?: InheritAccessConfig;
+  /**
+   * The Astro collection name to load entries from.
+   * Useful when the URL path doesn't match the Astro collection name
+   * (e.g., URL is /courses/... but Astro collection is "courseChapters").
+   * If not specified, uses the collection name inferred from the include pattern.
+   */
+  astroCollection?: string;
+  /**
+   * Transform content ID to URL path.
+   * Used for building success URLs after checkout and content URLs in Polar.
+   * Example: "courses/my-course/toc" -> "courses/my-course"
+   */
+  contentIdToUrl?: (contentId: string) => string;
 }
 
 export interface MonaKioskConfig {
@@ -22,6 +66,9 @@ export interface MonaKioskConfig {
   productNameTemplate?: string;
   signinPagePath?: string;
   siteUrl: string;
+  accessCookieSecret?: string;
+  accessCookieTtlSeconds?: number;
+  accessCookieMaxEntries?: number;
   isAuthenticated?: (context: APIContext) => boolean | Promise<boolean>;
   checkAccess?: (
     context: APIContext,
@@ -29,9 +76,17 @@ export interface MonaKioskConfig {
   ) => boolean | Promise<boolean>;
 }
 
-export type ResolvedCollectionConfig = CollectionConfig & {
+export type ResolvedCollectionConfig = Omit<
+  CollectionConfig,
+  "inheritAccess" | "contentIdToUrl"
+> & {
   name: string;
   include: string;
+  inheritAccess?: InheritAccessConfig;
+  /** The Astro collection to load entries from (defaults to name if not specified) */
+  astroCollection: string;
+  /** Transform content ID to URL path */
+  contentIdToUrl?: (contentId: string) => string;
 };
 
 export type ResolvedMonaKioskConfig = Omit<
@@ -41,6 +96,9 @@ export type ResolvedMonaKioskConfig = Omit<
   collections: ResolvedCollectionConfig[];
   signinPagePath: string;
   siteUrl: string;
+  accessCookieSecret?: string;
+  accessCookieTtlSeconds: number;
+  accessCookieMaxEntries: number;
   i18n?: ResolvedI18nConfig | null;
 };
 
@@ -89,6 +147,7 @@ function resolveCollectionConfig(
     ...collection,
     name: inferredName,
     include: collection.include,
+    astroCollection: collection.astroCollection ?? inferredName,
   };
 }
 
@@ -96,11 +155,20 @@ function resolveConfig(
   input: MonaKioskConfig,
   options?: { astroI18n?: AstroConfig["i18n"] },
 ): ResolvedMonaKioskConfig {
+  if (!input.accessCookieSecret) {
+    throw new Error(
+      "MonaKiosk accessCookieSecret is required to enable access cookie caching.",
+    );
+  }
+
   return {
     ...input,
     collections: input.collections.map(resolveCollectionConfig),
     signinPagePath: input.signinPagePath ?? "/mona-kiosk/signin",
     siteUrl: input.siteUrl,
+    accessCookieSecret: input.accessCookieSecret,
+    accessCookieTtlSeconds: input.accessCookieTtlSeconds ?? 60 * 30,
+    accessCookieMaxEntries: input.accessCookieMaxEntries ?? 20,
     i18n: resolveI18nConfig(options?.astroI18n),
   };
 }

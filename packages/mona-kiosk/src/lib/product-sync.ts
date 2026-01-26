@@ -109,10 +109,15 @@ async function processPayableFile(
     }
   }
 
+  // Transform content ID to URL path if transform is defined
+  const urlPath = collectionConfig.contentIdToUrl
+    ? collectionConfig.contentIdToUrl(canonicalId)
+    : canonicalId;
+
   // Generate content URL
   const contentUrl = buildContentUrl({
     siteUrl: config.siteUrl,
-    canonicalId,
+    canonicalId: urlPath,
     i18n: config.i18n,
   });
 
@@ -161,6 +166,12 @@ export async function syncProductsToPolar(config: ResolvedMonaKioskConfig) {
 
   for (const collectionConfig of config.collections) {
     const pattern = collectionConfig.include;
+
+    // Skip collections that inherit access from parent (they don't create products)
+    if (collectionConfig.inheritAccess) {
+      console.log(`  ⏭️ Skipping ${pattern} (inherits access from parent)`);
+      continue;
+    }
 
     try {
       const files = await glob(pattern, {

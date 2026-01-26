@@ -33,6 +33,17 @@ export async function GET(context: APIContext) {
   // Get config
   const config = getGlobalConfig();
 
+  // Find collection config for this content to get contentIdToUrl transform
+  const collectionName = contentId.split("/")[0];
+  const collectionConfig = config.collections.find(
+    (c) => c.name === collectionName,
+  );
+
+  // Transform content ID to URL path if transform is defined
+  const urlPath = collectionConfig?.contentIdToUrl
+    ? collectionConfig.contentIdToUrl(contentId)
+    : contentId;
+
   // Get customer email from session if available
   const customerEmail = cookies.get(COOKIE_NAMES.CUSTOMER_EMAIL)?.value;
 
@@ -50,7 +61,7 @@ export async function GET(context: APIContext) {
     accessToken: config.polar.accessToken,
     successUrl: buildContentUrl({
       siteUrl: url.origin,
-      canonicalId: contentId,
+      canonicalId: urlPath,
       i18n: config.i18n,
     }),
     server: config.polar.server,

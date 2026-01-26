@@ -38,6 +38,7 @@ POLAR_ACCESS_TOKEN=polar_oat_xxxxxxxxxxxxx
 POLAR_ORG_SLUG=your-org-slug
 POLAR_ORG_ID=your-org-id
 POLAR_SERVER=sandbox  # or 'production'
+ACCESS_COOKIE_SECRET=your-random-secret-string  # Required - generate with: openssl rand -base64 32
 ```
 
 ### 2. Create an Astro Project
@@ -99,6 +100,7 @@ export default defineConfig({
         server: (process.env.POLAR_SERVER as "production" | "sandbox") || "sandbox",
       },
       siteUrl: "https://example.com", // Required for benefits
+      accessCookieSecret: process.env.ACCESS_COOKIE_SECRET, // Required for access caching
       collections: [
         { include: "src/content/blog/**/*.md" },
       ],
@@ -409,9 +411,15 @@ monaKiosk({
     paywallTemplate?: string;           // Custom paywall HTML
     downloadableTemplate?: string;      // Custom downloadable panel HTML
     previewHandler?: PreviewHandler;    // Custom preview function
+    inheritAccess?: InheritAccessConfig; // For child content inheriting parent's access
+    astroCollection?: string;           // Astro collection name if different from URL path
+    contentIdToUrl?: (contentId: string) => string;  // Transform content ID to URL path
   }],
   productNameTemplate?: string;         // E.g., "[title] - Premium"
   signinPagePath?: string;              // Default: "/mona-kiosk/signin"
+  accessCookieSecret: string;           // Required - secret for signing access cookies
+  accessCookieTtlSeconds?: number;      // Default: 1800 (30 minutes)
+  accessCookieMaxEntries?: number;      // Default: 20 - max cached content entries
   isAuthenticated?: (context: APIContext) => boolean | Promise<boolean>;  // Custom auth check (must be self-contained)
   checkAccess?: (context: APIContext, contentId: string) => boolean | Promise<boolean>;  // Custom access check (must be self-contained)
 })
@@ -420,6 +428,79 @@ monaKiosk({
 > ⚠️ **Important**: Custom functions (`isAuthenticated`, `checkAccess`, `previewHandler`) must be self-contained.
 >
 > See [Custom Authentication & Access Control](#custom-authentication--access-control) for details.
+
+## Access Cookie Caching
+
+MonaKiosk caches access validation results in a signed cookie to reduce API calls to Polar. This improves performance for authenticated users navigating between paywalled content.
+
+```typescript
+monaKiosk({
+  accessCookieSecret: process.env.ACCESS_COOKIE_SECRET, // Required - use a strong random string
+  accessCookieTtlSeconds: 1800,  // Optional - cache TTL (default: 30 minutes)
+  accessCookieMaxEntries: 20,    // Optional - max cached entries (default: 20)
+  // ...
+})
+```
+
+**How it works:**
+
+1. When a user with access visits paywalled content, the access check result is cached
+2. Subsequent visits to the same content skip the Polar API call
+3. The cookie is HMAC-signed to prevent tampering
+4. Old entries are evicted when `maxEntries` is exceeded (LRU-style)
+5. Cookie expires after `ttlSeconds` and is refreshed on access
+
+**Security:**
+
+- Cookies are `HttpOnly`, `Secure`, and `SameSite=lax`
+- HMAC-SHA256 signature prevents tampering
+- Short TTL ensures access revocations take effect quickly
+
+## Inherited Access (Course Chapters)
+
+For content structures where child content (like course chapters) should inherit access from parent content (like the course TOC), use `inheritAccess`:
+
+```typescript
+monaKiosk({
+  collections: [
+    // Parent collection - creates products
+    {
+      include: "src/content/courses/**/toc.md",
+      contentIdToUrl: (id) => id.replace(/\/toc$/, ""), // courses/my-course/toc → courses/my-course
+    },
+    // Child collection - inherits access from parent
+    {
+      include: "src/content/courses/**/*.md",
+      astroCollection: "courses",  // Astro collection name
+      inheritAccess: {
+        parentContentId: (ctx) => {
+          // Skip toc.md files (they are parents, not children)
+          if (ctx.slug.endsWith("/toc") || ctx.slug === "toc") return null;
+          // Extract course name and build parent ID
+          const parts = ctx.slug.split("/");
+          const courseName = parts[0];
+          return `courses/${courseName}/toc`;
+        },
+      },
+    },
+  ],
+})
+```
+
+**Key concepts:**
+
+- **Parent content**: Has `price` field, creates Polar products
+- **Child content**: No `price` field, inherits access from parent
+- **`parentContentId`**: Function that resolves parent's content ID from child's context
+- **Return `null`**: Makes content free (no paywall)
+- **`astroCollection`**: Use when URL path differs from Astro collection name
+- **`contentIdToUrl`**: Transform content ID to URL for checkout success redirects
+
+**Benefits:**
+
+- Single purchase grants access to all chapters
+- No duplicate products in Polar
+- Clean URL structure (e.g., `/courses/my-course/01-intro`)
 
 ## Customization
 
@@ -692,10 +773,12 @@ MonaKiosk exports the following types and utilities:
 ```typescript
 // Type imports
 import type {
-  PayableEntry,      // Collection entry with payable metadata
-  PaywallState,      // State object in Astro.locals
-  PreviewHandler,    // Custom preview function type
-  MonaKioskConfig    // Integration configuration
+  PayableEntry,           // Collection entry with payable metadata
+  PaywallState,           // State object in Astro.locals
+  PreviewHandler,         // Custom preview function type
+  MonaKioskConfig,        // Integration configuration
+  InheritAccessConfig,    // Configuration for inherited access
+  InheritAccessContext,   // Context passed to inheritAccess resolver
 } from "mona-kiosk";
 
 // Value imports
@@ -804,6 +887,9 @@ interface MonaKioskConfig {
   collections: CollectionConfig[];
   productNameTemplate?: string;
   signinPagePath?: string;
+  accessCookieSecret: string;         // Required - secret for signing access cookies
+  accessCookieTtlSeconds?: number;    // Default: 1800 (30 minutes)
+  accessCookieMaxEntries?: number;    // Default: 20 - max cached content entries
   isAuthenticated?: (context: APIContext) => boolean | Promise<boolean>;
   checkAccess?: (context: APIContext, contentId: string) => boolean | Promise<boolean>;
 }
@@ -820,6 +906,21 @@ interface CollectionConfig {
   paywallTemplate?: string;           // Optional custom paywall HTML
   downloadableTemplate?: string;      // Optional custom downloadable panel HTML
   previewHandler?: PreviewHandler;    // Optional custom preview function
+  inheritAccess?: InheritAccessConfig; // For child content inheriting parent's access
+  astroCollection?: string;           // Astro collection name if different from URL path
+  contentIdToUrl?: (contentId: string) => string;  // Transform content ID to URL path
+}
+
+interface InheritAccessConfig {
+  /** Resolve parent's content ID from child's context */
+  parentContentId: (context: InheritAccessContext) => string | null;
+}
+
+interface InheritAccessContext {
+  contentId: string;   // Child's canonical content ID
+  collection: string;  // Child's collection name
+  slug: string;        // Child's slug
+  url: URL;            // Request URL
 }
 ```
 

@@ -47,18 +47,29 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
                       ? cfg.checkAccess.toString()
                       : "undefined";
 
-                    // Serialize preview handlers per collection
+                    // Serialize preview handlers and inheritAccess per collection
                     const collectionsCode = cfg.collections
                       .map((c) => {
                         const previewFn = c.previewHandler
                           ? c.previewHandler.toString()
                           : "undefined";
 
+                        const inheritAccessCode = c.inheritAccess
+                          ? `{ parentContentId: ${c.inheritAccess.parentContentId.toString()} }`
+                          : "undefined";
+
+                        const contentIdToUrlFn = c.contentIdToUrl
+                          ? c.contentIdToUrl.toString()
+                          : "undefined";
+
                         return `{
                       name: ${JSON.stringify(c.name)},
                       include: ${JSON.stringify(c.include)},
                       paywallTemplate: ${JSON.stringify(c.paywallTemplate)},
-                      previewHandler: ${previewFn}
+                      previewHandler: ${previewFn},
+                      inheritAccess: ${inheritAccessCode},
+                      astroCollection: ${JSON.stringify(c.astroCollection)},
+                      contentIdToUrl: ${contentIdToUrlFn}
                     }`;
                       })
                       .join(",\n");
@@ -70,6 +81,9 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
                       collections: [${collectionsCode}],
                       productNameTemplate: ${JSON.stringify(cfg.productNameTemplate)},
                       signinPagePath: ${JSON.stringify(cfg.signinPagePath)},
+                      accessCookieSecret: ${JSON.stringify(cfg.accessCookieSecret)},
+                      accessCookieTtlSeconds: ${JSON.stringify(cfg.accessCookieTtlSeconds)},
+                      accessCookieMaxEntries: ${JSON.stringify(cfg.accessCookieMaxEntries)},
                       i18n: ${JSON.stringify(cfg.i18n)},
                       isAuthenticated: ${isAuthFn},
                       checkAccess: ${checkAccessFn},
