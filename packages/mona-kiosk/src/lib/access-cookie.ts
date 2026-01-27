@@ -51,7 +51,9 @@ export function decodeAccessCookie(params: {
       return null;
     }
 
-    const decoded = JSON.parse(base64UrlDecode(payloadPart)) as AccessCookiePayload;
+    const decoded = JSON.parse(
+      base64UrlDecode(payloadPart),
+    ) as AccessCookiePayload;
     if (
       !decoded ||
       decoded.v !== COOKIE_VERSION ||

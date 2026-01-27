@@ -14,7 +14,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./middleware": "./src/middleware/index.ts",
-    "./routes/*": "./src/routes/*"
+    "./routes/*": "./src/routes/*",
+    "./components/*": "./src/components/*"
   },
   "files": [
     "src"

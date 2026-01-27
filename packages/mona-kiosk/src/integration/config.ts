@@ -10,28 +10,15 @@ export interface PolarConfig {
 }
 
 /**
- * Context passed to inheritAccess.parentContentId resolver
+ * Configuration for grouped content (e.g., courses with chapters).
+ * A single collection config handles both the index entry (pricing page)
+ * and child entries (chapters that inherit access from the index).
  */
-export interface InheritAccessContext {
-  /** Child's canonical content ID (e.g., "courseChapters/my-course/01-intro") */
-  contentId: string;
-  /** Child's collection name */
-  collection: string;
-  /** Child's slug (e.g., "my-course/01-intro") */
-  slug: string;
-  /** Request URL */
-  url: URL;
-}
-
-/**
- * Configuration for content that inherits access from parent content
- */
-export interface InheritAccessConfig {
-  /**
-   * Function to resolve parent's content ID from child's info
-   * @returns Parent's content ID (e.g., "courses/my-course/toc"), or null if should be free
-   */
-  parentContentId: (context: InheritAccessContext) => string | null;
+export interface GroupConfig {
+  /** Filename stem of the pricing/index entry (e.g., "toc") */
+  index: string;
+  /** Astro collection name for child entries (optional) */
+  childCollection?: string;
 }
 
 export interface CollectionConfig {
@@ -40,12 +27,6 @@ export interface CollectionConfig {
   downloadableTemplate?: string;
   previewHandler?: PreviewHandler;
   /**
-   * For child content that inherits access from parent content.
-   * When set, this collection's content will check parent's access instead of its own.
-   * Products are NOT created for collections with inheritAccess.
-   */
-  inheritAccess?: InheritAccessConfig;
-  /**
    * The Astro collection name to load entries from.
    * Useful when the URL path doesn't match the Astro collection name
    * (e.g., URL is /courses/... but Astro collection is "courseChapters").
@@ -53,11 +34,11 @@ export interface CollectionConfig {
    */
   astroCollection?: string;
   /**
-   * Transform content ID to URL path.
-   * Used for building success URLs after checkout and content URLs in Polar.
-   * Example: "courses/my-course/toc" -> "courses/my-course"
+   * Configuration for grouped content (e.g., courses with chapters).
+   * When set, the index entry (matching group.index filename) is the pricing entry,
+   * and all other entries inherit access from their parent index.
    */
-  contentIdToUrl?: (contentId: string) => string;
+  group?: GroupConfig;
 }
 
 export interface MonaKioskConfig {
@@ -76,17 +57,12 @@ export interface MonaKioskConfig {
   ) => boolean | Promise<boolean>;
 }
 
-export type ResolvedCollectionConfig = Omit<
-  CollectionConfig,
-  "inheritAccess" | "contentIdToUrl"
-> & {
+export type ResolvedCollectionConfig = Omit<CollectionConfig, never> & {
   name: string;
   include: string;
-  inheritAccess?: InheritAccessConfig;
   /** The Astro collection to load entries from (defaults to name if not specified) */
   astroCollection: string;
-  /** Transform content ID to URL path */
-  contentIdToUrl?: (contentId: string) => string;
+  group?: GroupConfig;
 };
 
 export type ResolvedMonaKioskConfig = Omit<

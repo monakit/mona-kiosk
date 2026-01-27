@@ -33,16 +33,20 @@ export async function GET(context: APIContext) {
   // Get config
   const config = getGlobalConfig();
 
-  // Find collection config for this content to get contentIdToUrl transform
+  // Find collection config for this content to get group transform
   const collectionName = contentId.split("/")[0];
   const collectionConfig = config.collections.find(
     (c) => c.name === collectionName,
   );
 
-  // Transform content ID to URL path if transform is defined
-  const urlPath = collectionConfig?.contentIdToUrl
-    ? collectionConfig.contentIdToUrl(contentId)
-    : contentId;
+  // For group configs, strip /{group.index} suffix from content ID to build URL
+  let urlPath = contentId;
+  if (collectionConfig?.group) {
+    const suffix = `/${collectionConfig.group.index}`;
+    if (urlPath.endsWith(suffix)) {
+      urlPath = urlPath.slice(0, -suffix.length);
+    }
+  }
 
   // Get customer email from session if available
   const customerEmail = cookies.get(COOKIE_NAMES.CUSTOMER_EMAIL)?.value;

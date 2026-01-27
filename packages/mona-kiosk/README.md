@@ -411,9 +411,8 @@ monaKiosk({
     paywallTemplate?: string;           // Custom paywall HTML
     downloadableTemplate?: string;      // Custom downloadable panel HTML
     previewHandler?: PreviewHandler;    // Custom preview function
-    inheritAccess?: InheritAccessConfig; // For child content inheriting parent's access
     astroCollection?: string;           // Astro collection name if different from URL path
-    contentIdToUrl?: (contentId: string) => string;  // Transform content ID to URL path
+    group?: GroupConfig;                // For grouped content (e.g., courses with chapters)
   }],
   productNameTemplate?: string;         // E.g., "[title] - Premium"
   signinPagePath?: string;              // Default: "/mona-kiosk/signin"
@@ -456,53 +455,90 @@ monaKiosk({
 - HMAC-SHA256 signature prevents tampering
 - Short TTL ensures access revocations take effect quickly
 
-## Inherited Access (Course Chapters)
+## Grouped Content (Course Chapters)
 
-For content structures where child content (like course chapters) should inherit access from parent content (like the course TOC), use `inheritAccess`:
+For content structures where child content (like course chapters) should inherit access from a parent index entry (like the course TOC), use `group`:
 
 ```typescript
 monaKiosk({
   collections: [
-    // Parent collection - creates products
-    {
-      include: "src/content/courses/**/toc.md",
-      contentIdToUrl: (id) => id.replace(/\/toc$/, ""), // courses/my-course/toc → courses/my-course
-    },
-    // Child collection - inherits access from parent
     {
       include: "src/content/courses/**/*.md",
-      astroCollection: "courses",  // Astro collection name
-      inheritAccess: {
-        parentContentId: (ctx) => {
-          // Skip toc.md files (they are parents, not children)
-          if (ctx.slug.endsWith("/toc") || ctx.slug === "toc") return null;
-          // Extract course name and build parent ID
-          const parts = ctx.slug.split("/");
-          const courseName = parts[0];
-          return `courses/${courseName}/toc`;
-        },
-      },
+      group: { index: "toc", childCollection: "courseChapters" },
     },
   ],
 })
 ```
 
+A single config replaces what previously required two separate collection configs. The `group` option tells MonaKiosk:
+
+- **`index`**: The filename stem of the pricing entry (e.g., `toc` matches `toc.md`)
+- **`childCollection`** (optional): The Astro collection name for child entries, if different from the inferred collection
+
+**How it works:**
+
+- `/courses/git-essentials` — stripped index URL, serves the `toc.md` entry with paywall
+- `/courses/git-essentials/toc` — direct index URL, same as above
+- `/courses/git-essentials/01-basics` — child entry, inherits access from the parent `toc.md`
+
 **Key concepts:**
 
-- **Parent content**: Has `price` field, creates Polar products
-- **Child content**: No `price` field, inherits access from parent
-- **`parentContentId`**: Function that resolves parent's content ID from child's context
-- **Return `null`**: Makes content free (no paywall)
-- **`astroCollection`**: Use when URL path differs from Astro collection name
-- **`contentIdToUrl`**: Transform content ID to URL for checkout success redirects
+- **Index entry**: Has `price` field, creates a Polar product. The filename stem matches `group.index`.
+- **Child entries**: All other files in the glob. They inherit access from the parent index.
+- Only index entries are synced to Polar — child entries never create products.
+- The content ID stored in Polar is always the index entry's canonical ID (e.g., `courses/git-essentials/toc`).
 
 **Benefits:**
 
+- Single config instead of two fragile collection configs
 - Single purchase grants access to all chapters
 - No duplicate products in Polar
 - Clean URL structure (e.g., `/courses/my-course/01-intro`)
+- Stripped index URLs work automatically (e.g., `/courses/my-course` serves `toc.md`)
 
 ## Customization
+
+### Payment Button Component
+
+`mona-kiosk` ships an Astro component you can drop into any page, layout, or MDX:
+
+```astro
+---
+import PaymentButton from "mona-kiosk/components/PaymentButton.astro";
+---
+
+<PaymentButton
+  contentId="typescript-fundamentals"
+  price={999}
+  currency="usd"
+  interval="month"
+/>
+```
+
+You can also pass a full checkout URL:
+
+```astro
+<PaymentButton checkoutUrl="/api/mona-kiosk/checkout?content=typescript-fundamentals" />
+```
+
+**Props**
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `contentId` | `string` | `undefined` | Builds checkout URL as `/api/mona-kiosk/checkout?content=...` |
+| `checkoutUrl` | `string` | `undefined` | Overrides URL if provided |
+| `label` | `string` | `"Purchase Access"` | Button label (slot overrides) |
+| `price` | `number` | `undefined` | Price in cents (e.g., `999`) |
+| `currency` | `string` | `"usd"` | ISO currency code |
+| `interval` | `string` | `undefined` | e.g. `"month"`, `"year"` |
+| `showPrice` | `boolean` | `true` | Show/hide price label |
+| `size` | `"sm" \| "md" \| "lg"` | `"md"` | Button size |
+| `variant` | `"solid" \| "outline" \| "ghost"` | `"solid"` | Button style |
+| `align` | `"left" \| "center" \| "right"` | `"left"` | Alignment |
+| `fullWidth` | `boolean` | `false` | Stretch button to container width |
+| `className` | `string` | `""` | Extra classes |
+
+> If neither `contentId` nor `checkoutUrl` is provided, the button is disabled.
 
 ### Custom Paywall Template
 
@@ -777,8 +813,7 @@ import type {
   PaywallState,           // State object in Astro.locals
   PreviewHandler,         // Custom preview function type
   MonaKioskConfig,        // Integration configuration
-  InheritAccessConfig,    // Configuration for inherited access
-  InheritAccessContext,   // Context passed to inheritAccess resolver
+  GroupConfig,            // Configuration for grouped content (courses with chapters)
 } from "mona-kiosk";
 
 // Value imports
@@ -906,21 +941,15 @@ interface CollectionConfig {
   paywallTemplate?: string;           // Optional custom paywall HTML
   downloadableTemplate?: string;      // Optional custom downloadable panel HTML
   previewHandler?: PreviewHandler;    // Optional custom preview function
-  inheritAccess?: InheritAccessConfig; // For child content inheriting parent's access
   astroCollection?: string;           // Astro collection name if different from URL path
-  contentIdToUrl?: (contentId: string) => string;  // Transform content ID to URL path
+  group?: GroupConfig;                // For grouped content (e.g., courses with chapters)
 }
 
-interface InheritAccessConfig {
-  /** Resolve parent's content ID from child's context */
-  parentContentId: (context: InheritAccessContext) => string | null;
-}
-
-interface InheritAccessContext {
-  contentId: string;   // Child's canonical content ID
-  collection: string;  // Child's collection name
-  slug: string;        // Child's slug
-  url: URL;            // Request URL
+interface GroupConfig {
+  /** Filename stem of the pricing/index entry (e.g., "toc") */
+  index: string;
+  /** Astro collection name for child entries (optional) */
+  childCollection?: string;
 }
 ```
 

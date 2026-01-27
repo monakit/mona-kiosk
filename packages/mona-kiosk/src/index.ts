@@ -2,8 +2,7 @@
 
 export { COOKIE_NAMES, ROUTES } from "./constants";
 export type {
-  InheritAccessConfig,
-  InheritAccessContext,
+  GroupConfig,
   MonaKioskConfig,
 } from "./integration/config";
 export { monaKiosk } from "./integration/index";

@@ -47,19 +47,11 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
                       ? cfg.checkAccess.toString()
                       : "undefined";
 
-                    // Serialize preview handlers and inheritAccess per collection
+                    // Serialize preview handlers and group config per collection
                     const collectionsCode = cfg.collections
                       .map((c) => {
                         const previewFn = c.previewHandler
                           ? c.previewHandler.toString()
-                          : "undefined";
-
-                        const inheritAccessCode = c.inheritAccess
-                          ? `{ parentContentId: ${c.inheritAccess.parentContentId.toString()} }`
-                          : "undefined";
-
-                        const contentIdToUrlFn = c.contentIdToUrl
-                          ? c.contentIdToUrl.toString()
                           : "undefined";
 
                         return `{
@@ -67,9 +59,8 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
                       include: ${JSON.stringify(c.include)},
                       paywallTemplate: ${JSON.stringify(c.paywallTemplate)},
                       previewHandler: ${previewFn},
-                      inheritAccess: ${inheritAccessCode},
                       astroCollection: ${JSON.stringify(c.astroCollection)},
-                      contentIdToUrl: ${contentIdToUrlFn}
+                      group: ${JSON.stringify(c.group)}
                     }`;
                       })
                       .join(",\n");
@@ -81,6 +72,7 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
                       collections: [${collectionsCode}],
                       productNameTemplate: ${JSON.stringify(cfg.productNameTemplate)},
                       signinPagePath: ${JSON.stringify(cfg.signinPagePath)},
+                      siteUrl: ${JSON.stringify(cfg.siteUrl)},
                       accessCookieSecret: ${JSON.stringify(cfg.accessCookieSecret)},
                       accessCookieTtlSeconds: ${JSON.stringify(cfg.accessCookieTtlSeconds)},
                       accessCookieMaxEntries: ${JSON.stringify(cfg.accessCookieMaxEntries)},

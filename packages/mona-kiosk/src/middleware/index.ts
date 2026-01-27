@@ -3,7 +3,6 @@ import { defineMiddleware } from "astro:middleware";
 import type { MiddlewareHandler } from "astro";
 import { ACCESS_COOKIE_OPTIONS, COOKIE_NAMES } from "../constants";
 import type {
-  InheritAccessContext,
   ResolvedCollectionConfig,
   ResolvedMonaKioskConfig,
 } from "../integration/config";
@@ -22,7 +21,12 @@ import {
   getDownloadableFiles,
 } from "../lib/downloadables";
 import { renderErrorHtml } from "../lib/error-renderer";
-import { buildUrlPatterns, parsePathname } from "../lib/i18n";
+import {
+  buildUrlPatterns,
+  includePatternToUrlPattern,
+  parsePathname,
+  type UrlPatternInput,
+} from "../lib/i18n";
 import { findProductByContentId } from "../lib/polar-client";
 import {
   buildTemplateContext,
@@ -46,12 +50,8 @@ interface ContentInfo {
   collection: string;
   collectionConfig: ResolvedCollectionConfig;
   body: string;
-  /** If this content inherits access, this is the parent's content ID */
+  /** If this content inherits access from a group parent, this is the parent's content ID */
   parentContentId?: string;
-  /** If inheriting access, this is the parent's price */
-  parentPrice?: number;
-  /** If inheriting access, this is the parent's currency */
-  parentCurrency?: string;
 }
 
 /**
@@ -135,26 +135,19 @@ async function injectHtmlBeforeBodyClose(
 }
 
 /**
- * Check if URL matches a pattern
+ * Convert a glob-style URL pattern to a RegExp
  */
-function matchesUrlPattern(pathname: string, pattern: string): boolean {
-  // Convert glob pattern to regex
+function globToRegex(pattern: string): RegExp {
   const regexPattern = pattern
     .replace(/\*\*/g, "___DOUBLESTAR___")
     .replace(/\*/g, "[^/]*")
     .replace(/___DOUBLESTAR___/g, ".*");
-
-  const regex = new RegExp(`^${regexPattern}/?$`);
-  return regex.test(pathname);
+  return new RegExp(`^${regexPattern}/?$`);
 }
 
-/**
- * Check if URL should be processed by paywall middleware
- * Only process URLs that match configured include patterns
- */
 function shouldProcessUrl(
   pathname: string,
-  includePatterns: string[],
+  collections: ResolvedCollectionConfig[],
   i18n?: ResolvedMonaKioskConfig["i18n"],
 ): boolean {
   // Skip API routes, assets, and other non-content paths
@@ -168,8 +161,217 @@ function shouldProcessUrl(
   }
 
   // Convert include patterns to URL patterns and check
-  const urlPatterns = buildUrlPatterns(includePatterns, i18n);
-  return urlPatterns.some((pattern) => matchesUrlPattern(pathname, pattern));
+  const inputs: UrlPatternInput[] = collections.map((c) => ({
+    include: c.include,
+    group: c.group ? { index: c.group.index } : undefined,
+  }));
+  const urlPatterns = buildUrlPatterns(inputs, i18n);
+  return urlPatterns.some((pattern) => globToRegex(pattern).test(pathname));
+}
+
+/**
+ * Find the matching collection config for a given pathname and parsed info.
+ * For group configs, also matches stripped index URLs (e.g., /courses/x matches
+ * the pattern if /courses/x/{group.index} would match).
+ */
+function findCollectionConfig(
+  pathname: string,
+  collection: string,
+  configs: ResolvedCollectionConfig[],
+): ResolvedCollectionConfig | undefined {
+  return configs.find((c) => {
+    if (c.name !== collection) return false;
+
+    const regex = globToRegex(includePatternToUrlPattern(c.include));
+    if (regex.test(pathname)) {
+      return true;
+    }
+
+    // For group configs, check if pathname + "/" + group.index matches
+    if (c.group) {
+      const indexPathname = `${pathname.replace(/\/+$/, "")}/${c.group.index}`;
+      if (regex.test(indexPathname)) {
+        return true;
+      }
+    }
+
+    return false;
+  });
+}
+
+/**
+ * Handle group content routing (index entries and child entries).
+ *
+ * Cases:
+ * 1. Last slug segment === group.index -> index entry (e.g., /courses/x/toc)
+ * 2. Else, try slug + "/" + group.index as entry -> stripped index URL (e.g., /courses/x)
+ * 3. Otherwise -> child entry (e.g., /courses/x/01-basics)
+ */
+async function getGroupContentInfo(params: {
+  collectionConfig: ResolvedCollectionConfig;
+  collection: string;
+  slug: string;
+  localePath: string | null;
+  accessCookie: AccessCookiePayload | null;
+  now: number;
+}): Promise<ContentInfo | null> {
+  const { collectionConfig, collection, slug, localePath, accessCookie, now } =
+    params;
+  const group = collectionConfig.group;
+  if (!group) return null;
+
+  const astroCollection = collectionConfig.astroCollection;
+  const slugSegments = slug.split("/");
+  const lastSegment = slugSegments[slugSegments.length - 1];
+
+  // Case 1: Direct index URL (e.g., /courses/git-essentials/toc)
+  if (lastSegment === group.index) {
+    const entryKey = localePath ? `${localePath}/${slug}` : slug;
+    const entry = (await getEntry(
+      astroCollection as never,
+      entryKey,
+    )) as unknown;
+    if (!entry) return null;
+
+    return buildIndexContentInfo({
+      entry,
+      collection,
+      collectionConfig,
+      accessCookie,
+      now,
+    });
+  }
+
+  // Case 2: Stripped index URL (e.g., /courses/git-essentials)
+  const indexSlug = `${slug}/${group.index}`;
+  const indexEntryKey = localePath ? `${localePath}/${indexSlug}` : indexSlug;
+  const indexEntry = (await getEntry(
+    astroCollection as never,
+    indexEntryKey,
+  )) as unknown;
+
+  if (indexEntry) {
+    // This is a stripped index URL — serve the index entry
+    return buildIndexContentInfo({
+      entry: indexEntry,
+      collection,
+      collectionConfig,
+      accessCookie,
+      now,
+    });
+  }
+
+  // Case 3: Child entry (e.g., /courses/git-essentials/01-basics)
+  const childCollection = group.childCollection ?? astroCollection;
+  const childEntryKey = localePath ? `${localePath}/${slug}` : slug;
+  const childEntry = (await getEntry(
+    childCollection as never,
+    childEntryKey,
+  )) as unknown;
+
+  if (!childEntry) return null;
+
+  // Derive parent: all segments except last + group.index
+  const parentSlug = `${slugSegments.slice(0, -1).join("/")}/${group.index}`;
+  const parentEntryKey = localePath
+    ? `${localePath}/${parentSlug}`
+    : parentSlug;
+  const parentEntry = (await getEntry(
+    astroCollection as never,
+    parentEntryKey,
+  )) as unknown;
+
+  if (!parentEntry) {
+    console.warn(
+      `[MonaKiosk] Parent entry not found for child: ${slug}. Expected parent at: ${parentSlug}`,
+    );
+    return null;
+  }
+
+  // Parent's content ID
+  const parentContentId = entryToContentId({
+    collection,
+    entryId: (parentEntry as { id: string }).id,
+    entrySlug: (parentEntry as { slug?: string }).slug,
+  });
+
+  const cachedAccess = getAccessCookieEntry({
+    payload: accessCookie,
+    contentId: parentContentId,
+    now,
+  });
+  const cachedProductId = cachedAccess?.productId ?? null;
+
+  const parentProductId =
+    cachedProductId ?? (await findProductByContentId(parentContentId));
+
+  if (!parentProductId) {
+    console.warn(
+      `[MonaKiosk] Parent product not found for: ${parentContentId}. Content will be treated as free.`,
+    );
+    return null;
+  }
+
+  return {
+    isPayable: true,
+    productId: parentProductId,
+    contentId: parentContentId,
+    entry: childEntry as PayableEntry,
+    collection,
+    collectionConfig,
+    body: (childEntry as { body: string }).body,
+    parentContentId,
+  };
+}
+
+/**
+ * Build ContentInfo for a group index entry (the pricing page).
+ */
+async function buildIndexContentInfo(params: {
+  entry: unknown;
+  collection: string;
+  collectionConfig: ResolvedCollectionConfig;
+  accessCookie: AccessCookiePayload | null;
+  now: number;
+}): Promise<ContentInfo | null> {
+  const { entry, collection, collectionConfig, accessCookie, now } = params;
+
+  if (!isPayableEntry(entry)) {
+    return null;
+  }
+
+  const canonicalId = entryToContentId({
+    collection,
+    entryId: (entry as { id: string }).id,
+    entrySlug: (entry as { slug?: string }).slug,
+  });
+
+  const cachedAccess = getAccessCookieEntry({
+    payload: accessCookie,
+    contentId: canonicalId,
+    now,
+  });
+  const cachedProductId = cachedAccess?.productId ?? null;
+
+  const productId =
+    cachedProductId ?? (await findProductByContentId(canonicalId));
+
+  if (!productId) {
+    console.error(
+      `[MonaKiosk] Product not found in Polar for content: ${canonicalId}. Make sure to run a build first to sync products.`,
+    );
+    return null;
+  }
+
+  return {
+    isPayable: true,
+    productId,
+    contentId: canonicalId,
+    entry,
+    collection,
+    collectionConfig,
+    body: entry.body,
+  };
 }
 
 /**
@@ -177,7 +379,6 @@ function shouldProcessUrl(
  */
 async function getContentInfoFromPath(
   pathname: string,
-  url: URL,
   accessCookie: AccessCookiePayload | null,
   now: number,
 ): Promise<ContentInfo | null> {
@@ -191,33 +392,29 @@ async function getContentInfoFromPath(
     return null;
   }
 
-  // Check if collection is configured as payable
-  // We need to match both collection name AND URL pattern (for cases where multiple
-  // configs share the same base collection, e.g., courses/toc.md vs courses/chapters)
-  const collectionConfig = config.collections.find((c) => {
-    if (c.name !== collection) return false;
-
-    // Build URL pattern from include pattern and check if current path matches
-    const urlPattern = c.include
-      .replace(/\\/g, "/")
-      .replace(/^src\/content\//, "/")
-      .replace(/\*\.\{[^}]+\}$/, "*")
-      .replace(/\*\.(md|mdx)$/, "*");
-
-    // Convert glob to regex
-    const regexPattern = urlPattern
-      .replace(/\*\*/g, "___DOUBLESTAR___")
-      .replace(/\*/g, "[^/]*")
-      .replace(/___DOUBLESTAR___/g, ".*");
-
-    const regex = new RegExp(`^${regexPattern}/?$`);
-    return regex.test(pathname);
-  });
+  // Find matching collection config (supports group stripped-index URLs)
+  const collectionConfig = findCollectionConfig(
+    pathname,
+    collection,
+    config.collections,
+  );
   if (!collectionConfig) return null;
 
   try {
+    // Group config path
+    if (collectionConfig.group) {
+      return getGroupContentInfo({
+        collectionConfig,
+        collection,
+        slug,
+        localePath,
+        accessCookie,
+        now,
+      });
+    }
+
+    // Normal (non-group) flow
     const entryKey = localePath ? `${localePath}/${slug}` : slug;
-    // Use astroCollection to load from the correct Astro collection
     const astroCollection = collectionConfig.astroCollection;
     const entry = (await getEntry(
       astroCollection as never,
@@ -232,57 +429,6 @@ async function getContentInfoFromPath(
       entryId: (entry as { id: string }).id,
       entrySlug: (entry as { slug?: string }).slug,
     });
-
-    // Handle inheritAccess: child content inherits access from parent
-    if (collectionConfig.inheritAccess) {
-      const context: InheritAccessContext = {
-        contentId: canonicalId,
-        collection,
-        slug,
-        url,
-      };
-
-      const parentContentId =
-        collectionConfig.inheritAccess.parentContentId(context);
-
-      // If parentContentId returns null, content is free
-      if (!parentContentId) {
-        return null;
-      }
-
-      const cachedAccess = getAccessCookieEntry({
-        payload: accessCookie,
-        contentId: parentContentId,
-        now,
-      });
-      const cachedProductId = cachedAccess?.productId ?? null;
-
-      // Find parent's product in Polar if not cached
-      const parentProductId =
-        cachedProductId ?? (await findProductByContentId(parentContentId));
-
-      if (!parentProductId) {
-        // Parent product not found - treat as free (no paywall)
-        console.warn(
-          `[MonaKiosk] Parent product not found for: ${parentContentId}. Content will be treated as free.`,
-        );
-        return null;
-      }
-
-      // Get parent's price info from Polar (we need to query the product)
-      // For now, we'll mark it as payable and let the access check handle it
-      // The price will be fetched from the parent's product
-      return {
-        isPayable: true,
-        productId: parentProductId,
-        contentId: parentContentId, // Use parent's content ID for access check
-        entry: entry as PayableEntry, // Child entry (for body/content)
-        collection,
-        collectionConfig,
-        body: (entry as { body: string }).body,
-        parentContentId,
-      };
-    }
 
     // Normal flow: Check if content has price field (is payable)
     if (!isPayableEntry(entry)) {
@@ -376,10 +522,9 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     }
 
     const { url, cookies, locals } = context;
-    const includePatterns = config.collections.map((c) => c.include);
 
     // Skip URLs that don't match configured include patterns
-    if (!shouldProcessUrl(url.pathname, includePatterns, config.i18n)) {
+    if (!shouldProcessUrl(url.pathname, config.collections, config.i18n)) {
       return next();
     }
 
@@ -396,7 +541,6 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     // Check if current path is for payable content
     const contentInfo = await getContentInfoFromPath(
       url.pathname,
-      url,
       accessCookie,
       now,
     );
@@ -499,10 +643,10 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     }
 
     // Only generate preview if user doesn't have access
-    // Skip preview for inheritAccess content (child content doesn't have its own preview)
+    // Skip preview for group child content (child content doesn't have its own preview)
     let preview: string | undefined;
-    const isInheritedAccess = !!contentInfo.parentContentId;
-    if (!hasAccess && !isInheritedAccess) {
+    const isGroupChild = !!contentInfo.parentContentId;
+    if (!hasAccess && !isGroupChild) {
       preview = await buildPreview({
         collection: contentInfo.collection,
         entry: contentInfo.entry,
@@ -515,20 +659,20 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     }
 
     // Set paywall state in locals for page to access
-    // For inheritAccess content, use parent's info (no price/interval on child)
+    // For group child content, use parent's info (no price/interval on child)
     const interval =
-      !isInheritedAccess && "interval" in contentInfo.entry.data
+      !isGroupChild && "interval" in contentInfo.entry.data
         ? contentInfo.entry.data.interval
         : undefined;
 
-    // For inheritAccess content, downloads are on parent, not child
+    // For group child content, downloads are on parent, not child
     const hasDownloads =
-      !isInheritedAccess &&
+      !isGroupChild &&
       !!(
         contentInfo.entry.data.downloads &&
         contentInfo.entry.data.downloads.length > 0
       );
-    const downloadCount = isInheritedAccess
+    const downloadCount = isGroupChild
       ? 0
       : contentInfo.entry.data.downloads?.length || 0;
 
@@ -560,9 +704,9 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
       hasAccess,
       productId: contentInfo.productId,
       contentId: contentInfo.contentId,
-      // For inheritAccess content, price is on parent, not child
-      price: isInheritedAccess ? undefined : contentInfo.entry.data.price,
-      currency: isInheritedAccess ? undefined : contentInfo.entry.data.currency,
+      // For group child content, price is on parent, not child
+      price: isGroupChild ? undefined : contentInfo.entry.data.price,
+      currency: isGroupChild ? undefined : contentInfo.entry.data.currency,
       interval,
       title: contentInfo.entry.data.title,
       description: contentInfo.entry.data.description,

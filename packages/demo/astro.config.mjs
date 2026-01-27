@@ -40,18 +40,8 @@ export default defineConfig({
           include: "src/content/blog/**/*.md",
         },
         {
-          include: "src/content/courses/**/toc.md",
-          contentIdToUrl: (contentId) => contentId.replace(/\/toc$/, ""),
-        },
-        {
-          include: "src/content/courses/**/[0-9][0-9]-*.md",
-          astroCollection: "courseChapters",
-          inheritAccess: {
-            parentContentId: ({ slug }) => {
-              const courseId = slug.split("/")[0];
-              return `courses/${courseId}/toc`;
-            },
-          },
+          include: "src/content/courses/**/*.md",
+          group: { index: "toc", childCollection: "courseChapters" },
         },
       ],
       siteUrl: SITE_URL || "http://localhost:4321",

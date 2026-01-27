@@ -1,6 +1,7 @@
 ---
 import { getEntry, render } from "astro:content";
 import { ROUTES } from "mona-kiosk";
+import PaymentButton from "mona-kiosk/components/PaymentButton.astro";
 import BaseHead from "../../components/BaseHead.astro";
 import Footer from "../../components/Footer.astro";
 import Header from "../../components/Header.astro";
@@ -176,6 +177,16 @@ const pageTitle = isCourseDetail
 					<p>
 						<strong>{formattedPrice}</strong>
 					</p>
+					{course.data.price && !hasAccess && (
+						<PaymentButton
+							contentId={checkoutContentId}
+							price={course.data.price}
+							currency={course.data.currency ?? "usd"}
+							label="Purchase course"
+							align="left"
+							showPrice={false}
+						/>
+					)}
 					{course.body && (
 						<div>
 							{async () => {
@@ -198,7 +209,7 @@ const pageTitle = isCourseDetail
 													<li>
 														<a href={`/courses/${courseId}/${chapter.slug}`}>
 															<span>{chapter.title}</span>
-															{!isFree && course.data.price && (
+															{!isFree && !hasAccess && course.data.price && (
 																<span class="locked">Locked</span>
 															)}
 														</a>
@@ -213,7 +224,7 @@ const pageTitle = isCourseDetail
 								<li>
 									<a href={`/courses/${courseId}/${typedItem.slug}`}>
 										<span>{typedItem.title}</span>
-										{!typedItem.free && course.data.price && (
+										{!typedItem.free && !hasAccess && course.data.price && (
 											<span class="locked">Locked</span>
 										)}
 									</a>

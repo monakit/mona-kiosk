@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import matter from "gray-matter";
 import { glob } from "tinyglobby";
 import type { ResolvedMonaKioskConfig } from "../integration/config";
@@ -109,10 +109,14 @@ async function processPayableFile(
     }
   }
 
-  // Transform content ID to URL path if transform is defined
-  const urlPath = collectionConfig.contentIdToUrl
-    ? collectionConfig.contentIdToUrl(canonicalId)
-    : canonicalId;
+  // For group configs, strip /{group.index} suffix from canonical ID for URL path
+  let urlPath = canonicalId;
+  if (collectionConfig.group) {
+    const suffix = `/${collectionConfig.group.index}`;
+    if (urlPath.endsWith(suffix)) {
+      urlPath = urlPath.slice(0, -suffix.length);
+    }
+  }
 
   // Generate content URL
   const contentUrl = buildContentUrl({
@@ -153,6 +157,14 @@ async function processPayableFile(
 }
 
 /**
+ * Get the filename stem (without extension) from a file path
+ */
+function filenameStem(filePath: string): string {
+  const name = basename(filePath);
+  return name.replace(/\.(md|mdx)$/i, "");
+}
+
+/**
  * Sync all payable content to Polar.sh by parsing files directly
  */
 export async function syncProductsToPolar(config: ResolvedMonaKioskConfig) {
@@ -167,14 +179,8 @@ export async function syncProductsToPolar(config: ResolvedMonaKioskConfig) {
   for (const collectionConfig of config.collections) {
     const pattern = collectionConfig.include;
 
-    // Skip collections that inherit access from parent (they don't create products)
-    if (collectionConfig.inheritAccess) {
-      console.log(`  ⏭️ Skipping ${pattern} (inherits access from parent)`);
-      continue;
-    }
-
     try {
-      const files = await glob(pattern, {
+      let files = await glob(pattern, {
         absolute: true,
         onlyFiles: true,
       });
@@ -182,6 +188,19 @@ export async function syncProductsToPolar(config: ResolvedMonaKioskConfig) {
       if (!files || files.length === 0) {
         console.warn(`  ⚠️ No files found for pattern: ${pattern}`);
         continue;
+      }
+
+      // For group configs, only sync files whose filename stem matches group.index
+      if (collectionConfig.group) {
+        const indexStem = collectionConfig.group.index;
+        files = files.filter((f) => filenameStem(f) === indexStem);
+
+        if (files.length === 0) {
+          console.warn(
+            `  ⚠️ No index files (${indexStem}) found for pattern: ${pattern}`,
+          );
+          continue;
+        }
       }
 
       console.log(

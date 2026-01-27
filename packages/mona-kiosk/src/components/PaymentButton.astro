@@ -1,0 +1,191 @@
+---
+import { ROUTES } from "../constants";
+
+export interface Props {
+  contentId?: string;
+  checkoutUrl?: string;
+  label?: string;
+  price?: number;
+  currency?: string;
+  interval?: string;
+  showPrice?: boolean;
+  size?: "sm" | "md" | "lg";
+  variant?: "solid" | "outline" | "ghost";
+  align?: "left" | "center" | "right";
+  fullWidth?: boolean;
+  className?: string;
+}
+
+const {
+  contentId,
+  checkoutUrl,
+  label = "Purchase Access",
+  price,
+  currency = "usd",
+  interval,
+  showPrice = true,
+  size = "md",
+  variant = "solid",
+  align = "left",
+  fullWidth = false,
+  className = "",
+} = Astro.props;
+
+const resolvedCheckoutUrl =
+  checkoutUrl ??
+  (contentId
+    ? `${ROUTES.CHECKOUT}?content=${encodeURIComponent(contentId)}`
+    : "");
+
+let formattedPrice = "";
+if (price != null) {
+  try {
+    formattedPrice = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency.toUpperCase(),
+    }).format(price / 100);
+  } catch {
+    formattedPrice = `$${(price / 100).toFixed(2)}`;
+  }
+}
+
+const priceLabel =
+  showPrice && formattedPrice
+    ? `${formattedPrice}${interval ? `/${interval}` : ""}`
+    : "";
+const isDisabled = !resolvedCheckoutUrl;
+---
+
+<div class={`mona-kiosk-payment align-${align}`}>
+  {priceLabel && <div class="price">{priceLabel}</div>}
+  <a
+    href={resolvedCheckoutUrl || "#"}
+    class={`btn ${className}`.trim()}
+    data-size={size}
+    data-variant={variant}
+    data-fullwidth={fullWidth ? "true" : "false"}
+    aria-disabled={isDisabled ? "true" : "false"}
+  >
+    <span class="label"><slot>{label}</slot></span>
+    <span class="chevron" aria-hidden="true">›</span>
+  </a>
+</div>
+
+<style>
+  .mona-kiosk-payment {
+    --mona-kiosk-accent: #10b981;
+    --mona-kiosk-accent-hover: #0ea371;
+    --mona-kiosk-accent-ink: #042f1f;
+    --mona-kiosk-border: rgba(15, 23, 42, 0.15);
+    --mona-kiosk-shadow: 0 10px 24px rgba(16, 185, 129, 0.25);
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .align-left {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .align-center {
+    justify-items: center;
+    text-align: center;
+  }
+
+  .align-right {
+    justify-items: end;
+    text-align: right;
+  }
+
+  .price {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--mona-kiosk-accent-ink);
+    letter-spacing: 0.01em;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    border-radius: 999px;
+    padding: 0.8rem 1.6rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    text-decoration: none;
+    transition:
+      transform 0.2s ease,
+      box-shadow 0.2s ease,
+      background 0.2s ease,
+      color 0.2s ease,
+      border-color 0.2s ease;
+  }
+
+  .btn[data-size="sm"] {
+    padding: 0.6rem 1.2rem;
+    font-size: 0.85rem;
+  }
+
+  .btn[data-size="lg"] {
+    padding: 0.95rem 2rem;
+    font-size: 1rem;
+  }
+
+  .btn[data-variant="solid"] {
+    background: var(--mona-kiosk-accent);
+    color: white;
+    box-shadow: var(--mona-kiosk-shadow);
+    border: 1px solid transparent;
+  }
+
+  .btn[data-variant="outline"] {
+    background: transparent;
+    color: var(--mona-kiosk-accent-ink);
+    border: 1px solid var(--mona-kiosk-border);
+  }
+
+  .btn[data-variant="ghost"] {
+    background: rgba(16, 185, 129, 0.12);
+    color: var(--mona-kiosk-accent-ink);
+    border: 1px solid transparent;
+  }
+
+  .btn[data-fullwidth="true"] {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .btn:hover {
+    transform: translateY(-1px);
+  }
+
+  .btn[data-variant="solid"]:hover {
+    background: var(--mona-kiosk-accent-hover);
+  }
+
+  .btn[data-variant="outline"]:hover {
+    border-color: rgba(16, 185, 129, 0.5);
+    color: #065f46;
+  }
+
+  .btn[data-variant="ghost"]:hover {
+    background: rgba(16, 185, 129, 0.2);
+  }
+
+  .btn[aria-disabled="true"] {
+    opacity: 0.5;
+    pointer-events: none;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .chevron {
+    font-size: 1.1em;
+    transform: translateX(0);
+    transition: transform 0.2s ease;
+  }
+
+  .btn:hover .chevron {
+    transform: translateX(3px);
+  }
+</style>
