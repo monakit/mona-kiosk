@@ -79,10 +79,25 @@ async function buildPreview(params: {
   try {
     const markdown = entry.body;
     if (typeof markdown !== "string") {
-      if (entry.rendered?.html) {
-        return entry.rendered.html;
+      if (!previewHandler) {
+        return undefined;
       }
-      return undefined;
+
+      const previewContent = await previewHandler(entry);
+      if (!previewContent) {
+        return undefined;
+      }
+
+      const paywallTemplate = template ?? getDefaultPaywallTemplate();
+      const context = buildTemplateContext({
+        contentId,
+        collection,
+        entry,
+        preview: previewContent,
+        isAuthenticated,
+        signinPagePath,
+      });
+      return renderTemplate(paywallTemplate, context);
     }
 
     // Get preview handler (custom or default)
