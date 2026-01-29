@@ -49,7 +49,7 @@ interface ContentInfo {
   entry: PayableEntry;
   collection: string;
   collectionConfig: ResolvedCollectionConfig;
-  body: string;
+  body?: string;
   /** If this content inherits access from a group parent, this is the parent's content ID */
   parentContentId?: string;
 }
@@ -77,8 +77,16 @@ async function buildPreview(params: {
   } = params;
 
   try {
+    const markdown = entry.body;
+    if (typeof markdown !== "string") {
+      if (entry.rendered?.html) {
+        return entry.rendered.html;
+      }
+      return undefined;
+    }
+
     // Get preview handler (custom or default)
-    const handler = previewHandler ?? getDefaultPreviewHandler(entry.body);
+    const handler = previewHandler ?? getDefaultPreviewHandler(markdown);
 
     // Generate preview content
     const previewContent = await handler(entry);
@@ -199,6 +207,19 @@ function findCollectionConfig(
   });
 }
 
+function stripLocalePrefix(
+  pathname: string,
+  localePath: string | null,
+): string {
+  if (!localePath) return pathname;
+  const prefix = `/${localePath}`;
+  if (pathname === prefix) return "/";
+  if (pathname.startsWith(`${prefix}/`)) {
+    return pathname.slice(prefix.length) || "/";
+  }
+  return pathname;
+}
+
 /**
  * Handle group content routing (index entries and child entries).
  *
@@ -227,10 +248,7 @@ async function getGroupContentInfo(params: {
   // Case 1: Direct index URL (e.g., /courses/git-essentials/toc)
   if (lastSegment === group.index) {
     const entryKey = localePath ? `${localePath}/${slug}` : slug;
-    const entry = (await getEntry(
-      astroCollection as never,
-      entryKey,
-    )) as unknown;
+    const entry = await getEntry(astroCollection, entryKey);
     if (!entry) return null;
 
     return buildIndexContentInfo({
@@ -243,26 +261,34 @@ async function getGroupContentInfo(params: {
   }
 
   // Case 2: Stripped index URL (e.g., /courses/git-essentials)
-  const indexSlug = `${slug}/${group.index}`;
-  const indexEntryKey = localePath ? `${localePath}/${indexSlug}` : indexSlug;
-  const indexEntry = (await getEntry(
-    astroCollection as never,
-    indexEntryKey,
-  )) as unknown;
+  const childCollection = group.childCollection ?? astroCollection;
 
-  if (indexEntry) {
-    // This is a stripped index URL — serve the index entry
-    return buildIndexContentInfo({
-      entry: indexEntry,
-      collection,
-      collectionConfig,
-      accessCookie,
-      now,
-    });
+  // If slug has no "/" segments, this is the course root.
+  // In that case we should look for the index entry first to avoid
+  // probing child collection with an invalid key.
+  if (slugSegments.length === 1) {
+    const indexSlug = `${slug}/${group.index}`;
+    const indexEntryKey = localePath ? `${localePath}/${indexSlug}` : indexSlug;
+    const indexEntry = (await getEntry(
+      astroCollection as never,
+      indexEntryKey,
+    )) as unknown;
+
+    if (indexEntry) {
+      // This is a stripped index URL — serve the index entry
+      return buildIndexContentInfo({
+        entry: indexEntry,
+        collection,
+        collectionConfig,
+        accessCookie,
+        now,
+      });
+    }
+
+    return null;
   }
 
-  // Case 3: Child entry (e.g., /courses/git-essentials/01-basics)
-  const childCollection = group.childCollection ?? astroCollection;
+  // Case 2: Child entry (e.g., /courses/git-essentials/01-basics)
   const childEntryKey = localePath ? `${localePath}/${slug}` : slug;
   const childEntry = (await getEntry(
     childCollection as never,
@@ -393,8 +419,9 @@ async function getContentInfoFromPath(
   }
 
   // Find matching collection config (supports group stripped-index URLs)
+  const matchPathname = stripLocalePrefix(pathname, localePath);
   const collectionConfig = findCollectionConfig(
-    pathname,
+    matchPathname,
     collection,
     config.collections,
   );

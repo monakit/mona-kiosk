@@ -26,33 +26,35 @@ if (!course) {
   return Astro.redirect("/courses");
 }
 
-const flattenStructure = (structure: Array<Record<string, unknown>>) => {
+type Chapter = { slug: string; title: string; free?: boolean };
+type Part = { title: string; chapters: Array<Chapter> };
+type StructureItem = Chapter | Part;
+
+const flattenStructure = (structure: Array<StructureItem>) => {
   const chapters: Array<{ slug: string; title: string; free?: boolean }> = [];
   for (const item of structure) {
     if ("chapters" in item && Array.isArray(item.chapters)) {
       for (const chapter of item.chapters) {
         if (chapter && typeof chapter === "object") {
-          const typed = chapter as { slug: string; title: string; free?: boolean };
           chapters.push({
-            slug: typed.slug,
-            title: typed.title,
-            free: typed.free,
+            slug: chapter.slug,
+            title: chapter.title,
+            free: chapter.free,
           });
         }
       }
     } else if ("slug" in item && typeof item.slug === "string") {
-      const typed = item as { slug: string; title: string; free?: boolean };
       chapters.push({
-        slug: typed.slug,
-        title: typed.title,
-        free: typed.free,
+        slug: item.slug,
+        title: item.title,
+        free: item.free,
       });
     }
   }
   return chapters;
 };
 
-const structure = course.data.structure as Array<any>;
+const structure = course.data.structure;
 const chapters = flattenStructure(structure);
 const chapterMeta = chapterSlug
   ? chapters.find((chapter) => chapter.slug === chapterSlug)
@@ -91,170 +93,171 @@ const pageTitle = isCourseDetail
 
 <!doctype html>
 <html lang="en">
-	<head>
-		<BaseHead title={pageTitle} description={course.data.description} />
-		<style>
-			main {
-				width: 960px;
-			}
-			.course-hero {
-				margin-bottom: 2rem;
-			}
-			.course-hero h1 {
-				font-size: 2.25rem;
-				margin: 0 0 0.5rem 0;
-				color: rgb(var(--black));
-			}
-			.course-hero p {
-				margin: 0.5rem 0;
-				color: rgb(var(--gray-dark));
-			}
-			.toc {
-				list-style: none;
-				padding: 0;
-				margin: 1.5rem 0;
-				border: 1px solid rgba(var(--gray), 0.2);
-				border-radius: 12px;
-			}
-			.toc li {
-				padding: 0.75rem 1rem;
-				border-top: 1px solid rgba(var(--gray), 0.2);
-			}
-			.toc li:first-child {
-				border-top: none;
-			}
-			.toc a {
-				text-decoration: none;
-				color: rgb(var(--black));
-				display: flex;
-				justify-content: space-between;
-				align-items: center;
-			}
-			.toc .part {
-				background: rgba(var(--gray), 0.08);
-				font-weight: 600;
-			}
-			.locked {
-				color: rgb(var(--gray));
-				font-size: 0.85rem;
-			}
-			.chapter-content {
-				margin-top: 2rem;
-			}
-			.paywall {
-				margin-top: 2rem;
-				padding: 2rem;
-				border: 1px solid rgba(var(--gray), 0.2);
-				border-radius: 12px;
-				background: white;
-			}
-			.paywall a {
-				display: inline-block;
-				margin-top: 1rem;
-				color: white;
-				background: var(--accent);
-				padding: 0.6rem 1rem;
-				border-radius: 6px;
-				text-decoration: none;
-				font-weight: 600;
-			}
-			@media (max-width: 720px) {
-				main {
-					width: 100%;
-				}
-			}
-		</style>
-	</head>
-	<body>
-		<Header />
-		<main>
-			<a href="/courses">← All courses</a>
+  <head>
+    <BaseHead title={pageTitle} description={course.data.description} />
+    <style>
+      main {
+        width: 960px;
+      }
+      .course-hero {
+        margin-bottom: 2rem;
+      }
+      .course-hero h1 {
+        font-size: 2.25rem;
+        margin: 0 0 0.5rem 0;
+        color: rgb(var(--black));
+      }
+      .course-hero p {
+        margin: 0.5rem 0;
+        color: rgb(var(--gray-dark));
+      }
+      .toc {
+        list-style: none;
+        padding: 0;
+        margin: 1.5rem 0;
+        border: 1px solid rgba(var(--gray), 0.2);
+        border-radius: 12px;
+      }
+      .toc li {
+        padding: 0.75rem 1rem;
+        border-top: 1px solid rgba(var(--gray), 0.2);
+      }
+      .toc li:first-child {
+        border-top: none;
+      }
+      .toc a {
+        text-decoration: none;
+        color: rgb(var(--black));
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .toc .part {
+        background: rgba(var(--gray), 0.08);
+        font-weight: 600;
+      }
+      .locked {
+        color: rgb(var(--gray));
+        font-size: 0.85rem;
+      }
+      .chapter-content {
+        margin-top: 2rem;
+      }
+      .paywall {
+        margin-top: 2rem;
+        padding: 2rem;
+        border: 1px solid rgba(var(--gray), 0.2);
+        border-radius: 12px;
+        background: white;
+      }
+      .paywall a {
+        display: inline-block;
+        margin-top: 1rem;
+        color: white;
+        background: var(--accent);
+        padding: 0.6rem 1rem;
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 600;
+      }
+      @media (max-width: 720px) {
+        main {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <Header />
+    <main>
+      <a href="/courses">← All courses</a>
 
-			{isCourseDetail ? (
-				<section class="course-hero">
-					<h1>{course.data.title}</h1>
-					<p>{course.data.description}</p>
-					<p>
-						<strong>{formattedPrice}</strong>
-					</p>
-					{course.data.price && !hasAccess && (
-						<PaymentButton
-							contentId={checkoutContentId}
-							price={course.data.price}
-							currency={course.data.currency ?? "usd"}
-							label="Purchase course"
-							align="left"
-							showPrice={false}
-						/>
-					)}
-					{course.body && (
-						<div>
-							{async () => {
-								const { Content } = await render(course);
-								return <Content />;
-							}}
-						</div>
-					)}
-					<ul class="toc">
-						{structure.map((item) => {
-							const typedItem = item as any;
-							if ("chapters" in typedItem && Array.isArray(typedItem.chapters)) {
-								return (
-									<li class="part">
-										{typedItem.title}
-										<ul class="toc">
-											{typedItem.chapters.map((chapter: any) => {
-												const isFree = !!chapter.free;
-												return (
-													<li>
-														<a href={`/courses/${courseId}/${chapter.slug}`}>
-															<span>{chapter.title}</span>
-															{!isFree && !hasAccess && course.data.price && (
-																<span class="locked">Locked</span>
-															)}
-														</a>
-													</li>
-												);
-											})}
-										</ul>
-									</li>
-								);
-							}
-							return (
-								<li>
-									<a href={`/courses/${courseId}/${typedItem.slug}`}>
-										<span>{typedItem.title}</span>
-										{!typedItem.free && !hasAccess && course.data.price && (
-											<span class="locked">Locked</span>
-										)}
-									</a>
-								</li>
-							);
-						})}
-					</ul>
-				</section>
-			) : (
-				<section class="chapter-content">
-					<h1>{chapter?.data.title}</h1>
-					{canAccessChapter ? (
-						<article>
-							{ChapterContent && <ChapterContent />}
-						</article>
-					) : Astro.locals.paywall?.preview ? (
-						<div set:html={Astro.locals.paywall.preview} />
-					) : (
-						<div class="paywall">
-							<h2>This chapter is locked</h2>
-							<p>Purchase the full course to unlock all chapters.</p>
-							<p>
-								<strong>{formattedPrice}</strong>
-							</p>
-							<a href={checkoutUrl}>Purchase course</a>
-						</div>
-					)}
-				</section>
-			)}
-		</main>
-		<Footer />
-	</body>
+      {
+        isCourseDetail ? (
+          <section class="course-hero">
+            <h1>{course.data.title}</h1>
+            <p>{course.data.description}</p>
+            <p>
+              <strong>{formattedPrice}</strong>
+            </p>
+            {course.data.price && !hasAccess && (
+              <PaymentButton
+                contentId={checkoutContentId}
+                price={course.data.price}
+                currency={course.data.currency ?? "usd"}
+                label="Purchase course"
+                align="left"
+                showPrice={false}
+              />
+            )}
+            {course.body && (
+              <div>
+                {async () => {
+                  const { Content } = await render(course);
+                  return <Content />;
+                }}
+              </div>
+            )}
+            <ul class="toc">
+              {structure.map((item) => {
+                if ("chapters" in item && Array.isArray(item.chapters)) {
+                  const partItem = item as Part;
+                  return (
+                    <li class="part">
+                      {partItem.title}
+                      <ul class="toc">
+                        {partItem.chapters.map((chapter) => {
+                          const isFree = !!chapter.free;
+                          return (
+                            <li>
+                              <a href={`/courses/${courseId}/${chapter.slug}`}>
+                                <span>{chapter.title}</span>
+                                {!isFree && !hasAccess && course.data.price && (
+                                  <span class="locked">Locked</span>
+                                )}
+                              </a>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </li>
+                  );
+                }
+                const chapterItem = item as Chapter;
+                return (
+                  <li>
+                    <a href={`/courses/${courseId}/${chapterItem.slug}`}>
+                      <span>{chapterItem.title}</span>
+                      {!chapterItem.free && !hasAccess && course.data.price && (
+                        <span class="locked">Locked</span>
+                      )}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : (
+          <section class="chapter-content">
+            <h1>{chapter?.data.title}</h1>
+            {canAccessChapter ? (
+              <article>{ChapterContent && <ChapterContent />}</article>
+            ) : Astro.locals.paywall?.preview ? (
+              <div set:html={Astro.locals.paywall.preview} />
+            ) : (
+              <div class="paywall">
+                <h2>This chapter is locked</h2>
+                <p>Purchase the full course to unlock all chapters.</p>
+                <p>
+                  <strong>{formattedPrice}</strong>
+                </p>
+                <a href={checkoutUrl}>Purchase course</a>
+              </div>
+            )}
+          </section>
+        )
+      }
+    </main>
+    <Footer />
+  </body>
 </html>
