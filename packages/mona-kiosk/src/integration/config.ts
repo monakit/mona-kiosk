@@ -46,6 +46,7 @@ export interface MonaKioskConfig {
   collections: CollectionConfig[];
   productNameTemplate?: string;
   signinPagePath?: string;
+  middlewareOrder?: "pre" | "post";
   siteUrl: string;
   accessCookieSecret?: string;
   accessCookieTtlSeconds?: number;

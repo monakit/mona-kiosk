@@ -1,4 +1,4 @@
-import { getEntry } from "astro:content";
+import { type CollectionEntry, getCollection, getEntry } from "astro:content";
 import { defineMiddleware } from "astro:middleware";
 import type { MiddlewareHandler } from "astro";
 import { ACCESS_COOKIE_OPTIONS, COOKIE_NAMES } from "../constants";
@@ -220,6 +220,45 @@ function stripLocalePrefix(
   return pathname;
 }
 
+const groupIndexCache = new Map<string, Set<string>>();
+
+async function getGroupIndexIds(
+  astroCollection: string,
+  groupIndex: string,
+): Promise<Set<string>> {
+  const cacheKey = `${astroCollection}:${groupIndex}`;
+  const cached = groupIndexCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const entries = (await getCollection(astroCollection)) as Array<
+    CollectionEntry<string>
+  >;
+  const suffix = `/${groupIndex}`;
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    if (entry.id.endsWith(suffix)) {
+      ids.add(entry.id);
+    }
+  }
+  groupIndexCache.set(cacheKey, ids);
+  return ids;
+}
+
+function buildIndexIdCandidates(params: {
+  localePath: string | null;
+  slug: string;
+  groupIndex: string;
+}): string[] {
+  const { localePath, slug, groupIndex } = params;
+  const indexSlug = `${slug}/${groupIndex}`;
+  if (!localePath) {
+    return [indexSlug];
+  }
+  return [`${localePath}/${indexSlug}`, indexSlug];
+}
+
 /**
  * Handle group content routing (index entries and child entries).
  *
@@ -263,37 +302,30 @@ async function getGroupContentInfo(params: {
   // Case 2: Stripped index URL (e.g., /courses/git-essentials)
   const childCollection = group.childCollection ?? astroCollection;
 
-  // If slug has no "/" segments, this is the course root.
-  // In that case we should look for the index entry first to avoid
-  // probing child collection with an invalid key.
-  if (slugSegments.length === 1) {
-    const indexSlug = `${slug}/${group.index}`;
-    const indexEntryKey = localePath ? `${localePath}/${indexSlug}` : indexSlug;
-    const indexEntry = (await getEntry(
-      astroCollection as never,
-      indexEntryKey,
-    )) as unknown;
+  const indexIds = await getGroupIndexIds(astroCollection, group.index);
+  const indexCandidates = buildIndexIdCandidates({
+    localePath,
+    slug,
+    groupIndex: group.index,
+  });
+  const matchedIndexId = indexCandidates.find((id) => indexIds.has(id));
+  if (matchedIndexId) {
+    const indexEntry = await getEntry(astroCollection, matchedIndexId);
+    if (!indexEntry) return null;
 
-    if (indexEntry) {
-      // This is a stripped index URL — serve the index entry
-      return buildIndexContentInfo({
-        entry: indexEntry,
-        collection,
-        collectionConfig,
-        accessCookie,
-        now,
-      });
-    }
-
-    return null;
+    // This is a stripped index URL — serve the index entry
+    return buildIndexContentInfo({
+      entry: indexEntry,
+      collection,
+      collectionConfig,
+      accessCookie,
+      now,
+    });
   }
 
   // Case 2: Child entry (e.g., /courses/git-essentials/01-basics)
   const childEntryKey = localePath ? `${localePath}/${slug}` : slug;
-  const childEntry = (await getEntry(
-    childCollection as never,
-    childEntryKey,
-  )) as unknown;
+  const childEntry = await getEntry(childCollection, childEntryKey);
 
   if (!childEntry) return null;
 
@@ -302,10 +334,7 @@ async function getGroupContentInfo(params: {
   const parentEntryKey = localePath
     ? `${localePath}/${parentSlug}`
     : parentSlug;
-  const parentEntry = (await getEntry(
-    astroCollection as never,
-    parentEntryKey,
-  )) as unknown;
+  const parentEntry = await getEntry(astroCollection, parentEntryKey);
 
   if (!parentEntry) {
     console.warn(
@@ -443,10 +472,7 @@ async function getContentInfoFromPath(
     // Normal (non-group) flow
     const entryKey = localePath ? `${localePath}/${slug}` : slug;
     const astroCollection = collectionConfig.astroCollection;
-    const entry = (await getEntry(
-      astroCollection as never,
-      entryKey,
-    )) as unknown;
+    const entry = await getEntry(astroCollection, entryKey);
 
     if (!entry) return null;
 
