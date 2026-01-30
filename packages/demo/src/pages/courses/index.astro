@@ -28,107 +28,107 @@ const countChapters = (structure: Array<Record<string, unknown>>) => {
 
 const courseCards = courses.map((course) => {
   const courseSlug = course.id.replace(/\/toc$/, "");
-  const chapterCount = countChapters(
-    course.data.structure as Array<Record<string, unknown>>,
-  );
+  const chapterCount = countChapters(course.data.structure);
   return { course, courseSlug, chapterCount };
 });
 ---
 
 <!doctype html>
 <html lang="en">
-	<head>
-		<BaseHead title={`${SITE_TITLE} Courses`} description={SITE_DESCRIPTION} />
-		<style>
-			main {
-				width: 960px;
-			}
-			.course-header {
-				margin-bottom: 2rem;
-			}
-			.course-header h1 {
-				font-size: 2.5rem;
-				margin: 0 0 0.5rem 0;
-				color: rgb(var(--black));
-			}
-			.course-header p {
-				margin: 0;
-				color: rgb(var(--gray));
-				font-size: 1.1rem;
-			}
-			.course-grid {
-				display: grid;
-				grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-				gap: 1.5rem;
-				list-style-type: none;
-				margin: 0;
-				padding: 0;
-			}
-			.course-card {
-				border: 1px solid rgba(var(--gray), 0.2);
-				border-radius: 12px;
-				padding: 1.5rem;
-				background: white;
-				display: flex;
-				flex-direction: column;
-				gap: 0.75rem;
-			}
-			.course-card h3 {
-				margin: 0;
-				font-size: 1.3rem;
-				color: rgb(var(--black));
-			}
-			.course-card p {
-				margin: 0;
-				color: rgb(var(--gray-dark));
-			}
-			.course-meta {
-				display: flex;
-				justify-content: space-between;
-				color: rgb(var(--gray));
-				font-size: 0.9rem;
-			}
-			.course-card a {
-				margin-top: auto;
-				color: rgb(var(--accent));
-				font-weight: 600;
-				text-decoration: none;
-			}
-			@media (max-width: 720px) {
-				main {
-					width: 100%;
-				}
-				.course-grid {
-					grid-template-columns: 1fr;
-				}
-			}
-		</style>
-	</head>
-	<body>
-		<Header />
-		<main>
-			<section>
-				<div class="course-header">
-					<h1>Courses</h1>
-					<p>Two small example courses wired to the paywall.</p>
-				</div>
-				<ul class="course-grid">
-					{courseCards.map(({ course, courseSlug, chapterCount }) => {
-						return (
-							<li class="course-card">
-								<h3>{course.data.title}</h3>
-								<p>{course.data.description}</p>
-								<div class="course-meta">
-									<span>{chapterCount} chapters</span>
-									<span>{formatPrice(course.data.price)}</span>
-								</div>
-								<a href={`/courses/${courseSlug}`}>View course →</a>
-							</li>
-						);
-					})}
-				</ul>
-			</section>
-		</main>
-		<Footer />
-	</body>
+  <head>
+    <BaseHead title={`${SITE_TITLE} Courses`} description={SITE_DESCRIPTION} />
+    <style>
+      main {
+        width: 960px;
+      }
+      .course-header {
+        margin-bottom: 2rem;
+      }
+      .course-header h1 {
+        font-size: 2.5rem;
+        margin: 0 0 0.5rem 0;
+        color: rgb(var(--black));
+      }
+      .course-header p {
+        margin: 0;
+        color: rgb(var(--gray));
+        font-size: 1.1rem;
+      }
+      .course-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+      }
+      .course-card {
+        border: 1px solid rgba(var(--gray), 0.2);
+        border-radius: 12px;
+        padding: 1.5rem;
+        background: white;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .course-card h3 {
+        margin: 0;
+        font-size: 1.3rem;
+        color: rgb(var(--black));
+      }
+      .course-card p {
+        margin: 0;
+        color: rgb(var(--gray-dark));
+      }
+      .course-meta {
+        display: flex;
+        justify-content: space-between;
+        color: rgb(var(--gray));
+        font-size: 0.9rem;
+      }
+      .course-card a {
+        margin-top: auto;
+        color: rgb(var(--accent));
+        font-weight: 600;
+        text-decoration: none;
+      }
+      @media (max-width: 720px) {
+        main {
+          width: 100%;
+        }
+        .course-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <Header />
+    <main>
+      <section>
+        <div class="course-header">
+          <h1>Courses</h1>
+          <p>Two small example courses wired to the paywall.</p>
+        </div>
+        <ul class="course-grid">
+          {
+            courseCards.map(({ course, courseSlug, chapterCount }) => {
+              return (
+                <li class="course-card">
+                  <h3>{course.data.title}</h3>
+                  <p>{course.data.description}</p>
+                  <div class="course-meta">
+                    <span>{chapterCount} chapters</span>
+                    <span>{formatPrice(course.data.price)}</span>
+                  </div>
+                  <a href={`/courses/${courseSlug}`}>View course →</a>
+                </li>
+              );
+            })
+          }
+        </ul>
+      </section>
+    </main>
+    <Footer />
+  </body>
 </html>

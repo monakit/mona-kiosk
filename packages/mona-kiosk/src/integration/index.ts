@@ -114,7 +114,7 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
 
         addMiddleware({
           entrypoint: "mona-kiosk/middleware",
-          order: "pre",
+          order: config.middlewareOrder ?? "pre",
         });
 
         logger.info("✅ MonaKiosk middleware enabled");

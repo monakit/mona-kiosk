@@ -59,7 +59,7 @@ export interface PayableContent {
 export type PayableEntry = {
   id: string;
   slug?: string;
-  body: string;
+  body?: string;
   rendered?: { html: string } | null;
   data: PayableContent;
 };
@@ -79,10 +79,6 @@ export function isPayableEntry(entry: unknown): entry is PayableEntry {
   }
 
   if (typeof entry.id !== "string") {
-    return false;
-  }
-
-  if (typeof entry.body !== "string") {
     return false;
   }
 

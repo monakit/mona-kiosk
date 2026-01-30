@@ -97,13 +97,12 @@ export default defineConfig({
         accessToken: process.env.POLAR_ACCESS_TOKEN,
         organizationSlug: process.env.POLAR_ORG_SLUG,
         organizationId: process.env.POLAR_ORG_ID,
-        server: (process.env.POLAR_SERVER as "production" | "sandbox") || "sandbox",
+        server:
+          (process.env.POLAR_SERVER as "production" | "sandbox") || "sandbox",
       },
       siteUrl: "https://example.com", // Required for benefits
       accessCookieSecret: process.env.ACCESS_COOKIE_SECRET, // Required for access caching
-      collections: [
-        { include: "src/content/blog/**/*.md" },
-      ],
+      collections: [{ include: "src/content/blog/**/*.md" }],
     }),
   ],
   adapter: node({
@@ -204,8 +203,8 @@ In your content frontmatter:
 
 ```yaml
 ---
-title: 'Premium Tutorial'
-description: 'Learn advanced techniques'
+title: "Premium Tutorial"
+description: "Learn advanced techniques"
 price: 2000 # $20
 downloads:
   - title: "Source Code"
@@ -416,6 +415,7 @@ monaKiosk({
   }],
   productNameTemplate?: string;         // E.g., "[title] - Premium"
   signinPagePath?: string;              // Default: "/mona-kiosk/signin"
+  middlewareOrder?: "pre" | "post";     // Default: "pre" (see Middleware Order Control)
   accessCookieSecret: string;           // Required - secret for signing access cookies
   accessCookieTtlSeconds?: number;      // Default: 1800 (30 minutes)
   accessCookieMaxEntries?: number;      // Default: 20 - max cached content entries
@@ -435,10 +435,10 @@ MonaKiosk caches access validation results in a signed cookie to reduce API call
 ```typescript
 monaKiosk({
   accessCookieSecret: process.env.ACCESS_COOKIE_SECRET, // Required - use a strong random string
-  accessCookieTtlSeconds: 1800,  // Optional - cache TTL (default: 30 minutes)
-  accessCookieMaxEntries: 20,    // Optional - max cached entries (default: 20)
+  accessCookieTtlSeconds: 1800, // Optional - cache TTL (default: 30 minutes)
+  accessCookieMaxEntries: 20, // Optional - max cached entries (default: 20)
   // ...
-})
+});
 ```
 
 **How it works:**
@@ -467,7 +467,7 @@ monaKiosk({
       group: { index: "toc", childCollection: "courseChapters" },
     },
   ],
-})
+});
 ```
 
 A single config replaces what previously required two separate collection configs. The `group` option tells MonaKiosk:
@@ -523,20 +523,20 @@ You can also pass a full checkout URL:
 
 **Props**
 
-| Prop | Type | Default | Notes |
-| --- | --- | --- | --- |
-| `contentId` | `string` | `undefined` | Builds checkout URL as `/api/mona-kiosk/checkout?content=...` |
-| `checkoutUrl` | `string` | `undefined` | Overrides URL if provided |
-| `label` | `string` | `"Purchase Access"` | Button label (slot overrides) |
-| `price` | `number` | `undefined` | Price in cents (e.g., `999`) |
-| `currency` | `string` | `"usd"` | ISO currency code |
-| `interval` | `string` | `undefined` | e.g. `"month"`, `"year"` |
-| `showPrice` | `boolean` | `true` | Show/hide price label |
-| `size` | `"sm" \| "md" \| "lg"` | `"md"` | Button size |
-| `variant` | `"solid" \| "outline" \| "ghost"` | `"solid"` | Button style |
-| `align` | `"left" \| "center" \| "right"` | `"left"` | Alignment |
-| `fullWidth` | `boolean` | `false` | Stretch button to container width |
-| `className` | `string` | `""` | Extra classes |
+| Prop          | Type                              | Default             | Notes                                                         |
+| ------------- | --------------------------------- | ------------------- | ------------------------------------------------------------- |
+| `contentId`   | `string`                          | `undefined`         | Builds checkout URL as `/api/mona-kiosk/checkout?content=...` |
+| `checkoutUrl` | `string`                          | `undefined`         | Overrides URL if provided                                     |
+| `label`       | `string`                          | `"Purchase Access"` | Button label (slot overrides)                                 |
+| `price`       | `number`                          | `undefined`         | Price in cents (e.g., `999`)                                  |
+| `currency`    | `string`                          | `"usd"`             | ISO currency code                                             |
+| `interval`    | `string`                          | `undefined`         | e.g. `"month"`, `"year"`                                      |
+| `showPrice`   | `boolean`                         | `true`              | Show/hide price label                                         |
+| `size`        | `"sm" \| "md" \| "lg"`            | `"md"`              | Button size                                                   |
+| `variant`     | `"solid" \| "outline" \| "ghost"` | `"solid"`           | Button style                                                  |
+| `align`       | `"left" \| "center" \| "right"`   | `"left"`            | Alignment                                                     |
+| `fullWidth`   | `boolean`                         | `false`             | Stretch button to container width                             |
+| `className`   | `string`                          | `""`                | Extra classes                                                 |
 
 > If neither `contentId` nor `checkoutUrl` is provided, the button is disabled.
 
@@ -546,9 +546,10 @@ Override the default paywall design:
 
 ```typescript
 monaKiosk({
-  collections: [{
-    include: "src/content/blog/**/*.md",
-    paywallTemplate: `
+  collections: [
+    {
+      include: "src/content/blog/**/*.md",
+      paywallTemplate: `
       {{preview}}
 
       <div class="paywall">
@@ -568,9 +569,10 @@ monaKiosk({
           text-align: center;
         }
       </style>
-    `
-  }]
-})
+    `,
+    },
+  ],
+});
 ```
 
 **Available template variables:**
@@ -600,21 +602,25 @@ Control how much content to show in preview:
 
 ```typescript
 monaKiosk({
-  collections: [{
-    include: "src/content/blog/**/*.md",
-    previewHandler: async (entry) => {
-      // Access rendered HTML
-      if (entry.rendered?.html) {
-        const paragraphs = entry.rendered.html.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi);
-        return paragraphs?.slice(0, 2).join('\n') + '\n<p>...</p>';
-      }
+  collections: [
+    {
+      include: "src/content/blog/**/*.md",
+      previewHandler: async (entry) => {
+        // Access rendered HTML
+        if (entry.rendered?.html) {
+          const paragraphs = entry.rendered.html.match(
+            /<p\b[^>]*>[\s\S]*?<\/p>/gi,
+          );
+          return paragraphs?.slice(0, 2).join("\n") + "\n<p>...</p>";
+        }
 
-      // Or access raw markdown
-      const lines = entry.body.split('\n').slice(0, 10);
-      return lines.join('\n') + '\n\n...';
-    }
-  }]
-})
+        // Or access raw markdown
+        const lines = entry.body.split("\n").slice(0, 10);
+        return lines.join("\n") + "\n\n...";
+      },
+    },
+  ],
+});
 ```
 
 ### Custom Sign-in Page Path
@@ -637,6 +643,9 @@ Override how MonaKiosk checks authentication and content access. Useful when int
 
 Both are optional. If not provided, MonaKiosk uses built-in session cookie validation.
 
+> If your `isAuthenticated` relies on `context.locals` set by your own middleware,
+> set `middlewareOrder: "post"` so MonaKiosk runs after your middleware.
+
 #### Important: Function Serialization Limitation
 
 ⚠️ **Configuration functions must be self-contained** (no external imports).
@@ -650,8 +659,9 @@ monaKiosk({
   isAuthenticated: (context) => {
     // No external dependencies - works fine
     return !!context.locals.user;
-  }
-})
+  },
+  middlewareOrder: "post",
+});
 ```
 
 ❌ **Don't use inline functions with external dependencies**
@@ -662,17 +672,17 @@ monaKiosk({
   isAuthenticated: async (context) => {
     const session = await getSession(context); // External import - breaks at runtime!
     return !!session?.user;
-  }
-})
+  },
+});
 ```
 
 #### Behavior Matrix
 
-| Scenario | `isAuthenticated` | `checkAccess` | Signin Link | Paywall Shown | Full Content |
-|----------|-------------------|---------------|-------------|---------------|--------------|
-| Not authenticated | `false` | `false` | ✅ Yes | ✅ Yes | ❌ No |
-| Authenticated, not purchased | `true` | `false` | ❌ No | ✅ Yes | ❌ No |
-| Authenticated, purchased | `true` | `true` | ❌ No | ❌ No | ✅ Yes |
+| Scenario                     | `isAuthenticated` | `checkAccess` | Signin Link | Paywall Shown | Full Content |
+| ---------------------------- | ----------------- | ------------- | ----------- | ------------- | ------------ |
+| Not authenticated            | `false`           | `false`       | ✅ Yes      | ✅ Yes        | ❌ No        |
+| Authenticated, not purchased | `true`            | `false`       | ❌ No       | ✅ Yes        | ❌ No        |
+| Authenticated, purchased     | `true`            | `true`        | ❌ No       | ❌ No         | ✅ Yes       |
 
 ### Custom Downloadable Panel Template
 
@@ -680,9 +690,10 @@ Override the default floating panel design for downloadable files:
 
 ```typescript
 monaKiosk({
-  collections: [{
-    include: "src/content/blog/**/*.md",
-    downloadableTemplate: `
+  collections: [
+    {
+      include: "src/content/blog/**/*.md",
+      downloadableTemplate: `
       <div class="my-downloads">
         <h4>📥 Your Downloads</h4>
         {{fileList}}
@@ -700,9 +711,10 @@ monaKiosk({
           max-width: 350px;
         }
       </style>
-    `
-  }]
-})
+    `,
+    },
+  ],
+});
 ```
 
 **Available template variables:**
@@ -714,52 +726,33 @@ monaKiosk({
 
 ```typescript
 monaKiosk({
-  productNameTemplate: "[title] - Premium Access"  // [title] = content title
-})
+  productNameTemplate: "[title] - Premium Access", // [title] = content title
+});
 ```
 
 ### Middleware Order Control
 
-By default, MonaKiosk middleware runs before your custom middleware (`order: "pre"`). If you need to control the execution order, use Astro's built-in `sequence()` function.
+By default, MonaKiosk middleware runs before your custom middleware (`order: "pre"`). If you need it to run after your middleware (e.g., to read `context.locals.user`), set `middlewareOrder: "post"`.
 
 #### Default Behavior
 
 ```typescript
 // astro.config.mjs - MonaKiosk auto-injects with order: "pre"
-monaKiosk({ /* config */ })
+monaKiosk({
+  /* config */
+});
+
+// Or: run MonaKiosk after your middleware
+monaKiosk({
+  /* config */
+  middlewareOrder: "post",
+});
 
 // src/middleware.ts - runs AFTER MonaKiosk
 export const onRequest = (context, next) => {
-  console.log('Paywall state:', context.locals.paywall);
+  console.log("Paywall state:", context.locals.paywall);
   return next();
 };
-```
-
-#### Custom Order with `sequence()`
-
-To run your middleware before MonaKiosk, or for complete control over execution order:
-
-```typescript
-// astro.config.mjs - no changes needed
-monaKiosk({ /* config */ })
-
-// src/middleware.ts
-import { sequence } from "astro:middleware";
-import { onRequest as monaKioskMiddleware } from "mona-kiosk/middleware";
-
-export const onRequest = sequence(
-  async (context, next) => {
-    // 1. Your auth runs FIRST
-    context.locals.user = await getUser(context);
-    return next();
-  },
-  monaKioskMiddleware,  // 2. MonaKiosk runs SECOND
-  async (context, next) => {
-    // 3. Your logging runs THIRD
-    console.log('Paywall state:', context.locals.paywall);
-    return next();
-  }
-);
 ```
 
 #### Use Cases
@@ -767,26 +760,21 @@ export const onRequest = sequence(
 **Pattern 1: Auth-First** (Your auth → MonaKiosk checks access)
 
 ```typescript
-// src/middleware.ts
-import { sequence } from "astro:middleware";
-import { onRequest as monaKioskMiddleware } from "mona-kiosk/middleware";
-
-export const onRequest = sequence(
-  async (context, next) => {
-    // Your auth middleware runs first
-    context.locals.user = await getUser(context.cookies);
-    return next();
-  },
-  monaKioskMiddleware  // MonaKiosk can now use context.locals.user
-);
-
 // astro.config.mjs
 monaKiosk({
+  /* config */
+  middlewareOrder: "post",
   isAuthenticated: (context) => !!context.locals.user,
   checkAccess: async (context, contentId) => {
     return context.locals.user?.purchases?.includes(contentId);
-  }
-})
+  },
+});
+
+// src/middleware.ts
+export const onRequest = async (context, next) => {
+  context.locals.user = await getUser(context.cookies);
+  return next();
+};
 ```
 
 **Pattern 2: MonaKiosk-First** (Default - MonaKiosk handles everything)
@@ -795,7 +783,7 @@ monaKiosk({
 // astro.config.mjs - no middleware.ts needed
 monaKiosk({
   // MonaKiosk handles auth and access checking
-})
+});
 
 // Your pages automatically get context.locals.paywall
 ```
@@ -809,17 +797,17 @@ MonaKiosk exports the following types and utilities:
 ```typescript
 // Type imports
 import type {
-  PayableEntry,           // Collection entry with payable metadata
-  PaywallState,           // State object in Astro.locals
-  PreviewHandler,         // Custom preview function type
-  MonaKioskConfig,        // Integration configuration
-  GroupConfig,            // Configuration for grouped content (courses with chapters)
+  PayableEntry, // Collection entry with payable metadata
+  PaywallState, // State object in Astro.locals
+  PreviewHandler, // Custom preview function type
+  MonaKioskConfig, // Integration configuration
+  GroupConfig, // Configuration for grouped content (courses with chapters)
 } from "mona-kiosk";
 
 // Value imports
 import {
-  isPayableEntry,    // Type guard for payable content
-  PayableMetadata    // Zod schema for frontmatter
+  isPayableEntry, // Type guard for payable content
+  PayableMetadata, // Zod schema for frontmatter
 } from "mona-kiosk";
 
 // PaywallState - Available in Astro.locals.paywall
@@ -851,7 +839,7 @@ interface PaywallState {
   /** Number of downloadable files */
   downloadCount?: number;
   /** Downloadable files metadata (only when hasAccess && hasDownloads) */
-  downloadableFiles?: Array<DownloadableFile>;  // Native Polar SDK type with version tracking
+  downloadableFiles?: Array<DownloadableFile>; // Native Polar SDK type with version tracking
   /** Rendered downloadable panel HTML (only when hasAccess && hasDownloads) */
   downloadableSection?: string;
 }
@@ -862,25 +850,25 @@ interface PaywallState {
 // The type extends Polar SDK's DownloadableRead with additional fields:
 
 interface DownloadableFile {
-  id: string;                    // Polar downloadable ID
-  benefitId: string;             // Polar benefit ID
+  id: string; // Polar downloadable ID
+  benefitId: string; // Polar benefit ID
   file: {
     id: string;
     name: string;
     size: number;
-    sizeReadable: string;        // Human-readable size from Polar
+    sizeReadable: string; // Human-readable size from Polar
     mimeType: string;
-    version: string | null;      // Version from Polar
+    version: string | null; // Version from Polar
     lastModifiedAt: Date | null; // Timestamp from Polar
     download: {
-      url: string;               // Signed S3 download URL
+      url: string; // Signed S3 download URL
       expiresAt: string;
     };
     // ... other Polar file fields
   };
-  downloadUrl: string;           // Convenience field (file.download.url)
-  isNew?: boolean;               // Marks newest version (auto-detected)
-  isLegacy?: boolean;            // Marks older versions (auto-detected)
+  downloadUrl: string; // Convenience field (file.download.url)
+  isNew?: boolean; // Marks newest version (auto-detected)
+  isLegacy?: boolean; // Marks older versions (auto-detected)
 }
 
 // Usage example:
@@ -888,21 +876,25 @@ interface DownloadableFile {
 
 // PayableMetadata schema (for content collections)
 const PayableMetadata = z.object({
-  price: z.coerce.number().int().min(1).optional(),  // Optional - content can be free
+  price: z.coerce.number().int().min(1).optional(), // Optional - content can be free
   currency: z.string().default("usd").optional(),
-  interval: z.enum(["month", "year", "week", "day"]).optional(),  // For subscriptions
-  downloads: z.array(z.object({
-    title: z.string(),         // Display name for the download
-    file: z.string(),          // Path relative to content file
-    description: z.string().optional(),
-  })).optional(),              // Downloadable files
+  interval: z.enum(["month", "year", "week", "day"]).optional(), // For subscriptions
+  downloads: z
+    .array(
+      z.object({
+        title: z.string(), // Display name for the download
+        file: z.string(), // Path relative to content file
+        description: z.string().optional(),
+      }),
+    )
+    .optional(), // Downloadable files
 });
 
 // Type guard for payable content
 if (isPayableEntry(entry)) {
-  console.log(entry.data.price);  // Type-safe access
+  console.log(entry.data.price); // Type-safe access
   if (entry.data.interval) {
-    console.log(`Subscription: ${entry.data.interval}`);  // Subscription
+    console.log(`Subscription: ${entry.data.interval}`); // Subscription
   } else {
     console.log("One-time purchase");
   }
@@ -918,31 +910,35 @@ import type { APIContext } from "astro";
 // Full configuration interface
 interface MonaKioskConfig {
   polar: PolarConfig;
-  siteUrl: string;                    // Required - base URL for content links
+  siteUrl: string; // Required - base URL for content links
   collections: CollectionConfig[];
   productNameTemplate?: string;
   signinPagePath?: string;
-  accessCookieSecret: string;         // Required - secret for signing access cookies
-  accessCookieTtlSeconds?: number;    // Default: 1800 (30 minutes)
-  accessCookieMaxEntries?: number;    // Default: 20 - max cached content entries
+  middlewareOrder?: "pre" | "post"; // Default: "pre"
+  accessCookieSecret: string; // Required - secret for signing access cookies
+  accessCookieTtlSeconds?: number; // Default: 1800 (30 minutes)
+  accessCookieMaxEntries?: number; // Default: 20 - max cached content entries
   isAuthenticated?: (context: APIContext) => boolean | Promise<boolean>;
-  checkAccess?: (context: APIContext, contentId: string) => boolean | Promise<boolean>;
+  checkAccess?: (
+    context: APIContext,
+    contentId: string,
+  ) => boolean | Promise<boolean>;
 }
 
 interface PolarConfig {
   accessToken: string;
   organizationId: string;
   organizationSlug: string;
-  server: "production" | "sandbox";  // Required
+  server: "production" | "sandbox"; // Required
 }
 
 interface CollectionConfig {
-  include: string;                    // Required glob pattern
-  paywallTemplate?: string;           // Optional custom paywall HTML
-  downloadableTemplate?: string;      // Optional custom downloadable panel HTML
-  previewHandler?: PreviewHandler;    // Optional custom preview function
-  astroCollection?: string;           // Astro collection name if different from URL path
-  group?: GroupConfig;                // For grouped content (e.g., courses with chapters)
+  include: string; // Required glob pattern
+  paywallTemplate?: string; // Optional custom paywall HTML
+  downloadableTemplate?: string; // Optional custom downloadable panel HTML
+  previewHandler?: PreviewHandler; // Optional custom preview function
+  astroCollection?: string; // Astro collection name if different from URL path
+  group?: GroupConfig; // For grouped content (e.g., courses with chapters)
 }
 
 interface GroupConfig {
@@ -998,23 +994,23 @@ setSessionCookie(
   session.token,
   new Date(session.expiresAt),
   session.customerId,
-  "user@example.com"
+  "user@example.com",
 );
 
 // Clear session cookies (sign out)
 clearSessionCookie(cookies);
 
 // Access cookie names
-console.log(COOKIE_NAMES.SESSION);        // "mona_kiosk_session"
-console.log(COOKIE_NAMES.CUSTOMER_ID);    // "mona_kiosk_customer_id"
+console.log(COOKIE_NAMES.SESSION); // "mona_kiosk_session"
+console.log(COOKIE_NAMES.CUSTOMER_ID); // "mona_kiosk_customer_id"
 console.log(COOKIE_NAMES.CUSTOMER_EMAIL); // "mona_kiosk_customer_email"
 
 // Access route constants
-console.log(ROUTES.CHECKOUT);      // "/api/mona-kiosk/checkout"
-console.log(ROUTES.AUTH_SIGNIN);   // "/api/mona-kiosk/auth/signin"
-console.log(ROUTES.AUTH_SIGNOUT);  // "/api/mona-kiosk/auth/signout"
-console.log(ROUTES.PORTAL);        // "/api/mona-kiosk/portal"
-console.log(ROUTES.SIGNIN_PAGE);   // "/mona-kiosk/signin"
+console.log(ROUTES.CHECKOUT); // "/api/mona-kiosk/checkout"
+console.log(ROUTES.AUTH_SIGNIN); // "/api/mona-kiosk/auth/signin"
+console.log(ROUTES.AUTH_SIGNOUT); // "/api/mona-kiosk/auth/signout"
+console.log(ROUTES.PORTAL); // "/api/mona-kiosk/portal"
+console.log(ROUTES.SIGNIN_PAGE); // "/mona-kiosk/signin"
 ```
 
 **Use Cases:**

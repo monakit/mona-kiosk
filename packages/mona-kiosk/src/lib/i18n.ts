@@ -183,6 +183,19 @@ export function parsePathname(
   };
 }
 
+export function stripLocalePrefix(
+  pathname: string,
+  localePath: string | null,
+): string {
+  if (!localePath) return pathname;
+  const prefix = `/${localePath}`;
+  if (pathname === prefix) return "/";
+  if (pathname.startsWith(`${prefix}/`)) {
+    return pathname.slice(prefix.length) || "/";
+  }
+  return pathname;
+}
+
 export function buildContentUrl(params: {
   siteUrl: string;
   canonicalId: string;

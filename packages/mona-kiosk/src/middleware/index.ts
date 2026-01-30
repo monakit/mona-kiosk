@@ -15,7 +15,11 @@ import {
   upsertAccessCookie,
 } from "../lib/access-cookie";
 import { validateCustomerAccess } from "../lib/auth";
-import { entryToContentId } from "../lib/content-id";
+import {
+  buildIndexIdCandidates,
+  entryToContentId,
+  getGroupIndexIds,
+} from "../lib/content-id";
 import {
   type DownloadableFile,
   getDownloadableFiles,
@@ -25,6 +29,7 @@ import {
   buildUrlPatterns,
   includePatternToUrlPattern,
   parsePathname,
+  stripLocalePrefix,
   type UrlPatternInput,
 } from "../lib/i18n";
 import { findProductByContentId } from "../lib/polar-client";
@@ -49,7 +54,7 @@ interface ContentInfo {
   entry: PayableEntry;
   collection: string;
   collectionConfig: ResolvedCollectionConfig;
-  body: string;
+  body?: string;
   /** If this content inherits access from a group parent, this is the parent's content ID */
   parentContentId?: string;
 }
@@ -77,8 +82,31 @@ async function buildPreview(params: {
   } = params;
 
   try {
+    const markdown = entry.body;
+    if (typeof markdown !== "string") {
+      if (!previewHandler) {
+        return undefined;
+      }
+
+      const previewContent = await previewHandler(entry);
+      if (!previewContent) {
+        return undefined;
+      }
+
+      const paywallTemplate = template ?? getDefaultPaywallTemplate();
+      const context = buildTemplateContext({
+        contentId,
+        collection,
+        entry,
+        preview: previewContent,
+        isAuthenticated,
+        signinPagePath,
+      });
+      return renderTemplate(paywallTemplate, context);
+    }
+
     // Get preview handler (custom or default)
-    const handler = previewHandler ?? getDefaultPreviewHandler(entry.body);
+    const handler = previewHandler ?? getDefaultPreviewHandler(markdown);
 
     // Generate preview content
     const previewContent = await handler(entry);
@@ -227,10 +255,7 @@ async function getGroupContentInfo(params: {
   // Case 1: Direct index URL (e.g., /courses/git-essentials/toc)
   if (lastSegment === group.index) {
     const entryKey = localePath ? `${localePath}/${slug}` : slug;
-    const entry = (await getEntry(
-      astroCollection as never,
-      entryKey,
-    )) as unknown;
+    const entry = await getEntry(astroCollection, entryKey);
     if (!entry) return null;
 
     return buildIndexContentInfo({
@@ -243,14 +268,19 @@ async function getGroupContentInfo(params: {
   }
 
   // Case 2: Stripped index URL (e.g., /courses/git-essentials)
-  const indexSlug = `${slug}/${group.index}`;
-  const indexEntryKey = localePath ? `${localePath}/${indexSlug}` : indexSlug;
-  const indexEntry = (await getEntry(
-    astroCollection as never,
-    indexEntryKey,
-  )) as unknown;
+  const childCollection = group.childCollection ?? astroCollection;
 
-  if (indexEntry) {
+  const indexIds = await getGroupIndexIds(astroCollection, group.index);
+  const indexCandidates = buildIndexIdCandidates({
+    localePath,
+    slug,
+    groupIndex: group.index,
+  });
+  const matchedIndexId = indexCandidates.find((id) => indexIds.has(id));
+  if (matchedIndexId) {
+    const indexEntry = await getEntry(astroCollection, matchedIndexId);
+    if (!indexEntry) return null;
+
     // This is a stripped index URL — serve the index entry
     return buildIndexContentInfo({
       entry: indexEntry,
@@ -261,13 +291,9 @@ async function getGroupContentInfo(params: {
     });
   }
 
-  // Case 3: Child entry (e.g., /courses/git-essentials/01-basics)
-  const childCollection = group.childCollection ?? astroCollection;
+  // Case 2: Child entry (e.g., /courses/git-essentials/01-basics)
   const childEntryKey = localePath ? `${localePath}/${slug}` : slug;
-  const childEntry = (await getEntry(
-    childCollection as never,
-    childEntryKey,
-  )) as unknown;
+  const childEntry = await getEntry(childCollection, childEntryKey);
 
   if (!childEntry) return null;
 
@@ -276,10 +302,7 @@ async function getGroupContentInfo(params: {
   const parentEntryKey = localePath
     ? `${localePath}/${parentSlug}`
     : parentSlug;
-  const parentEntry = (await getEntry(
-    astroCollection as never,
-    parentEntryKey,
-  )) as unknown;
+  const parentEntry = await getEntry(astroCollection, parentEntryKey);
 
   if (!parentEntry) {
     console.warn(
@@ -393,8 +416,9 @@ async function getContentInfoFromPath(
   }
 
   // Find matching collection config (supports group stripped-index URLs)
+  const matchPathname = stripLocalePrefix(pathname, localePath);
   const collectionConfig = findCollectionConfig(
-    pathname,
+    matchPathname,
     collection,
     config.collections,
   );
@@ -416,10 +440,7 @@ async function getContentInfoFromPath(
     // Normal (non-group) flow
     const entryKey = localePath ? `${localePath}/${slug}` : slug;
     const astroCollection = collectionConfig.astroCollection;
-    const entry = (await getEntry(
-      astroCollection as never,
-      entryKey,
-    )) as unknown;
+    const entry = await getEntry(astroCollection, entryKey);
 
     if (!entry) return null;
 
