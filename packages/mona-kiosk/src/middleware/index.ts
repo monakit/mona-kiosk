@@ -1,4 +1,4 @@
-import { type CollectionEntry, getCollection, getEntry } from "astro:content";
+import { getEntry } from "astro:content";
 import { defineMiddleware } from "astro:middleware";
 import type { MiddlewareHandler } from "astro";
 import { ACCESS_COOKIE_OPTIONS, COOKIE_NAMES } from "../constants";
@@ -15,7 +15,11 @@ import {
   upsertAccessCookie,
 } from "../lib/access-cookie";
 import { validateCustomerAccess } from "../lib/auth";
-import { buildIndexIdCandidates, entryToContentId } from "../lib/content-id";
+import {
+  buildIndexIdCandidates,
+  entryToContentId,
+  getGroupIndexIds,
+} from "../lib/content-id";
 import {
   type DownloadableFile,
   getDownloadableFiles,
@@ -221,32 +225,6 @@ function findCollectionConfig(
 
     return false;
   });
-}
-
-const groupIndexCache = new Map<string, Set<string>>();
-
-async function getGroupIndexIds(
-  astroCollection: string,
-  groupIndex: string,
-): Promise<Set<string>> {
-  const cacheKey = `${astroCollection}:${groupIndex}`;
-  const cached = groupIndexCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const entries = (await getCollection(astroCollection)) as Array<
-    CollectionEntry<string>
-  >;
-  const suffix = `/${groupIndex}`;
-  const ids = new Set<string>();
-  for (const entry of entries) {
-    if (entry.id.endsWith(suffix)) {
-      ids.add(entry.id);
-    }
-  }
-  groupIndexCache.set(cacheKey, ids);
-  return ids;
 }
 
 /**
