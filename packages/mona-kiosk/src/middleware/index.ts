@@ -1,4 +1,4 @@
-import { getEntry } from "astro:content";
+import { getCollection, getEntry } from "astro:content";
 import { defineMiddleware } from "astro:middleware";
 import type { MiddlewareHandler } from "astro";
 import { ACCESS_COOKIE_OPTIONS, COOKIE_NAMES } from "../constants";
@@ -270,7 +270,11 @@ async function getGroupContentInfo(params: {
   // Case 2: Stripped index URL (e.g., /courses/git-essentials)
   const childCollection = group.childCollection ?? astroCollection;
 
-  const indexIds = await getGroupIndexIds(astroCollection, group.index);
+  const indexIds = await getGroupIndexIds(
+    astroCollection,
+    group.index,
+    getCollection,
+  );
   const indexCandidates = buildIndexIdCandidates({
     localePath,
     slug,

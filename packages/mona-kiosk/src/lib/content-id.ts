@@ -1,4 +1,3 @@
-import { type CollectionEntry, getCollection } from "astro:content";
 import { relative } from "node:path";
 import GithubSlugger from "github-slugger";
 
@@ -141,11 +140,14 @@ export function buildIndexIdCandidates(params: {
   return [`${localePath}/${indexSlug}`];
 }
 
+export type CollectionEntryLike = { id: string };
+
 const groupIndexCache = new Map<string, Set<string>>();
 
 export async function getGroupIndexIds(
   astroCollection: string,
   groupIndex: string,
+  getCollection: (collection: string) => Promise<CollectionEntryLike[]>,
 ): Promise<Set<string>> {
   const cacheKey = `${astroCollection}:${groupIndex}`;
   const cached = groupIndexCache.get(cacheKey);
@@ -153,9 +155,7 @@ export async function getGroupIndexIds(
     return cached;
   }
 
-  const entries = (await getCollection(astroCollection)) as Array<
-    CollectionEntry<string>
-  >;
+  const entries = await getCollection(astroCollection);
   const suffix = `/${groupIndex}`;
   const ids = new Set<string>();
   for (const entry of entries) {
