@@ -137,5 +137,5 @@ export function buildIndexIdCandidates(params: {
   if (!localePath) {
     return [indexSlug];
   }
-  return [`${localePath}/${indexSlug}`, indexSlug];
+  return [`${localePath}/${indexSlug}`];
 }
