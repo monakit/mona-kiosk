@@ -126,3 +126,16 @@ export function generateContentIdCandidates(contentId: string): string[] {
 
   return Array.from(candidates);
 }
+
+export function buildIndexIdCandidates(params: {
+  localePath: string | null;
+  slug: string;
+  groupIndex: string;
+}): string[] {
+  const { localePath, slug, groupIndex } = params;
+  const indexSlug = `${slug}/${groupIndex}`;
+  if (!localePath) {
+    return [indexSlug];
+  }
+  return [`${localePath}/${indexSlug}`, indexSlug];
+}

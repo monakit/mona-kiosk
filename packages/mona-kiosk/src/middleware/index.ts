@@ -15,7 +15,7 @@ import {
   upsertAccessCookie,
 } from "../lib/access-cookie";
 import { validateCustomerAccess } from "../lib/auth";
-import { entryToContentId } from "../lib/content-id";
+import { buildIndexIdCandidates, entryToContentId } from "../lib/content-id";
 import {
   type DownloadableFile,
   getDownloadableFiles,
@@ -25,6 +25,7 @@ import {
   buildUrlPatterns,
   includePatternToUrlPattern,
   parsePathname,
+  stripLocalePrefix,
   type UrlPatternInput,
 } from "../lib/i18n";
 import { findProductByContentId } from "../lib/polar-client";
@@ -222,19 +223,6 @@ function findCollectionConfig(
   });
 }
 
-function stripLocalePrefix(
-  pathname: string,
-  localePath: string | null,
-): string {
-  if (!localePath) return pathname;
-  const prefix = `/${localePath}`;
-  if (pathname === prefix) return "/";
-  if (pathname.startsWith(`${prefix}/`)) {
-    return pathname.slice(prefix.length) || "/";
-  }
-  return pathname;
-}
-
 const groupIndexCache = new Map<string, Set<string>>();
 
 async function getGroupIndexIds(
@@ -259,19 +247,6 @@ async function getGroupIndexIds(
   }
   groupIndexCache.set(cacheKey, ids);
   return ids;
-}
-
-function buildIndexIdCandidates(params: {
-  localePath: string | null;
-  slug: string;
-  groupIndex: string;
-}): string[] {
-  const { localePath, slug, groupIndex } = params;
-  const indexSlug = `${slug}/${groupIndex}`;
-  if (!localePath) {
-    return [indexSlug];
-  }
-  return [`${localePath}/${indexSlug}`, indexSlug];
 }
 
 /**
