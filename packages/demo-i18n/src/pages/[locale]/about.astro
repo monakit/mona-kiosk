@@ -1,0 +1,28 @@
+---
+import AboutHeroImage from "@/assets/blog-placeholder-about.jpg";
+import Layout from "@/layouts/BlogPost.astro";
+import { m } from "@/paraglide/messages.js";
+import { type Locale } from "@/paraglide/runtime.js";
+
+const locale = Astro.currentLocale as Locale | undefined;
+if (!locale) {
+  return Astro.rewrite("/404");
+}
+---
+
+<Layout
+	title={m.about_title({}, { locale })}
+	description={m.about_description({}, { locale })}
+	pubDate={new Date('August 08 2021')}
+	heroImage={AboutHeroImage}
+>
+	<p>{m.about_paragraph_1({}, { locale })}</p>
+
+	<p>{m.about_paragraph_2({}, { locale })}</p>
+
+	<p>{m.about_paragraph_3({}, { locale })}</p>
+
+	<p>{m.about_paragraph_4({}, { locale })}</p>
+
+	<p>{m.about_paragraph_5({}, { locale })}</p>
+</Layout>

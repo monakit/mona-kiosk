@@ -1,0 +1,31 @@
+---
+title: 'Using MDX'
+description: '示例占位文本'
+pubDate: 'Jun 01 2024'
+heroImage: '../../../assets/blog-placeholder-5.jpg'
+---
+
+该主题已安装并在 `astro.config.mjs` 中配置了 [@astrojs/mdx](https://docs.astro.build/en/guides/integrations-guide/mdx/) 集成。如果你不想使用 MDX，可以从配置中移除此集成以禁用支持。
+
+## 为什么使用 MDX？
+
+MDX 是一种支持嵌入 JavaScript 与 JSX 语法的 Markdown 变体。这使你能够在 Markdown 内容中混入 UI 组件，用于交互式图表或提示信息。
+
+如果你已有 MDX 内容，这个集成可以让迁移到 Astro 变得更轻松。
+
+## 示例
+
+下面演示如何在 MDX 中导入并使用一个 UI 组件。  
+当你在浏览器中打开此页面时，应当会看到下方可点击的按钮。
+
+import HeaderLink from '../../../components/HeaderLink.astro';
+
+<HeaderLink href="#" onclick="alert('clicked!')">
+	Embedded component in MDX
+</HeaderLink>
+
+## 更多链接
+
+- [MDX 语法文档](https://mdxjs.com/docs/what-is-mdx)
+- [Astro 使用文档](https://docs.astro.build/en/guides/markdown-content/#markdown-and-mdx-pages)
+- **注意：** [Client Directives](https://docs.astro.build/en/reference/directives-reference/#client-directives) 仍然是创建交互组件所必需的。否则，MDX 中的组件默认会渲染为静态 HTML（不包含 JavaScript）。

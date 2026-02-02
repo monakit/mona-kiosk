@@ -1,0 +1,145 @@
+---
+import { getCollection } from "astro:content";
+import { getRelativeLocaleUrl } from "astro:i18n";
+import BaseHead from "@/components/BaseHead.astro";
+import Footer from "@/components/Footer.astro";
+import Header from "@/components/Header.astro";
+import { m } from "@/paraglide/messages.js";
+import { type Locale } from "@/paraglide/runtime.js";
+
+const locale = Astro.currentLocale as Locale | undefined;
+if (!locale) {
+  return Astro.rewrite("/404");
+}
+
+const courses = (
+  await getCollection("courses", ({ id }) => id.startsWith(`${locale}/`))
+).sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+const formatPrice = (price?: number) => {
+  if (!price) return m.price_free({}, { locale });
+  return `$${(price / 100).toFixed(2)}`;
+};
+
+const countChapters = (structure: Array<Record<string, unknown>>) => {
+  return structure.reduce((count, item) => {
+    if ("chapters" in item && Array.isArray(item.chapters)) {
+      return count + item.chapters.length;
+    }
+    if ("slug" in item) {
+      return count + 1;
+    }
+    return count;
+  }, 0);
+};
+
+const courseCards = courses.map((course) => {
+  const courseSlug = course.id.replace(`${locale}/`, "").replace(/\/toc$/, "");
+  const chapterCount = countChapters(course.data.structure);
+  const courseUrl = getRelativeLocaleUrl(locale, `courses/${courseSlug}`);
+  return { course, chapterCount, courseUrl };
+});
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <BaseHead
+      title={`${m.site_title({}, { locale })} ${m.courses_title({}, { locale })}`}
+      description={m.site_description({}, { locale })}
+    />
+    <style>
+      main {
+        width: 960px;
+      }
+      .course-header {
+        margin-bottom: 2rem;
+      }
+      .course-header h1 {
+        font-size: 2.5rem;
+        margin: 0 0 0.5rem 0;
+        color: rgb(var(--black));
+      }
+      .course-header p {
+        margin: 0;
+        color: rgb(var(--gray));
+        font-size: 1.1rem;
+      }
+      .course-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+      }
+      .course-card {
+        border: 1px solid rgba(var(--gray), 0.2);
+        border-radius: 12px;
+        padding: 1.5rem;
+        background: white;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .course-card h3 {
+        margin: 0;
+        font-size: 1.3rem;
+        color: rgb(var(--black));
+      }
+      .course-card p {
+        margin: 0;
+        color: rgb(var(--gray-dark));
+      }
+      .course-meta {
+        display: flex;
+        justify-content: space-between;
+        color: rgb(var(--gray));
+        font-size: 0.9rem;
+      }
+      .course-card a {
+        margin-top: auto;
+        color: rgb(var(--accent));
+        font-weight: 600;
+        text-decoration: none;
+      }
+      @media (max-width: 720px) {
+        main {
+          width: 100%;
+        }
+        .course-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <Header />
+    <main>
+      <section>
+        <div class="course-header">
+          <h1>{m.courses_title({}, { locale })}</h1>
+          <p>{m.courses_subtitle({}, { locale })}</p>
+        </div>
+        <ul class="course-grid">
+          {
+            courseCards.map(({ course, chapterCount, courseUrl }) => {
+              return (
+                <li class="course-card">
+                  <h3>{course.data.title}</h3>
+                  <p>{course.data.description}</p>
+                  <div class="course-meta">
+                    <span>{m.courses_chapters_label({ count: chapterCount }, { locale })}</span>
+                    <span>{formatPrice(course.data.price)}</span>
+                  </div>
+                  <a href={courseUrl}>{m.courses_view_course({}, { locale })}</a>
+                </li>
+              );
+            })
+          }
+        </ul>
+      </section>
+    </main>
+    <Footer />
+  </body>
+</html>

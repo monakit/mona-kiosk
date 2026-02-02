@@ -1,0 +1,94 @@
+---
+import { getCollection } from "astro:content";
+import BaseHead from "@/components/BaseHead.astro";
+import BlogCard from "@/components/BlogCard.astro";
+import Footer from "@/components/Footer.astro";
+import Header from "@/components/Header.astro";
+import { m } from "@/paraglide/messages.js";
+import { type Locale } from "@/paraglide/runtime.js";
+
+const locale = Astro.currentLocale as Locale | undefined;
+if (!locale) {
+  return Astro.rewrite("/404");
+}
+
+const posts = (
+  await getCollection("blog", ({ id }) => id.startsWith(`${locale}/`))
+).sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <BaseHead
+      title={m.site_title({}, { locale })}
+      description={m.site_description({}, { locale })}
+    />
+    <style>
+      main {
+        width: 960px;
+      }
+
+      .blog-header {
+        margin-bottom: 2rem;
+      }
+
+      .blog-header h1 {
+        font-size: 2.5rem;
+        margin: 0 0 0.5rem 0;
+        color: rgb(var(--black));
+      }
+
+      .blog-header p {
+        margin: 0;
+        color: rgb(var(--gray));
+        font-size: 1.1rem;
+      }
+
+      .blog-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      @media (max-width: 720px) {
+        main {
+          width: 100%;
+        }
+
+        .blog-grid {
+          grid-template-columns: 1fr;
+          gap: 1rem;
+        }
+
+        .blog-header h1 {
+          font-size: 2rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <Header />
+    <main>
+      <section>
+        <div class="blog-header">
+          <h1>{m.blog_posts_title({}, { locale })}</h1>
+          <p>{m.blog_posts_subtitle({}, { locale })}</p>
+        </div>
+        <ul class="blog-grid">
+          {
+            posts.map((post) => (
+              <li>
+                <BlogCard post={post} />
+              </li>
+            ))
+          }
+        </ul>
+      </section>
+    </main>
+    <Footer />
+  </body>
+</html>
