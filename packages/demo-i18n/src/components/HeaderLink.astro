@@ -1,0 +1,37 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { baseLocale } from "@/paraglide/runtime.js";
+
+type Props = HTMLAttributes<"a">;
+
+const { href, class: className, ...props } = Astro.props;
+const pathname = Astro.url.pathname.replace(import.meta.env.BASE_URL, "");
+const locale = Astro.currentLocale ?? baseLocale;
+const stripLocalePrefix = (value?: string) => {
+  if (!value) return value ?? "";
+  if (value === `/${locale}`) return "/";
+  if (value.startsWith(`/${locale}/`)) return value.slice(locale.length + 1);
+  return value;
+};
+const normalizedPathname = stripLocalePrefix(pathname);
+const hrefValue = typeof href === "string" ? href : href?.toString();
+const normalizedHref = stripLocalePrefix(hrefValue);
+const subpath = normalizedPathname.match(/[^/]+/g);
+const isActive =
+  normalizedHref === normalizedPathname ||
+  normalizedHref === `/${subpath?.[0] || ""}`;
+---
+
+<a href={href} class:list={[className, { active: isActive }]} {...props}>
+	<slot />
+</a>
+<style>
+	a {
+		display: inline-block;
+		text-decoration: none;
+	}
+	a.active {
+		font-weight: bolder;
+		text-decoration: underline;
+	}
+</style>

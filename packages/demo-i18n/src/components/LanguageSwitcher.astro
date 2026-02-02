@@ -1,0 +1,63 @@
+---
+import { getRelativeLocaleUrl } from "astro:i18n";
+import { m } from "@/paraglide/messages.js";
+import { baseLocale, type Locale, locales } from "@/paraglide/runtime.js";
+
+const locale = (Astro.currentLocale ?? baseLocale) as Locale;
+const rawPath = Astro.url.pathname.replace(import.meta.env.BASE_URL, "");
+const trimmedPath = rawPath.replace(/^\/+/g, "").replace(/\/+$/g, "");
+const pathWithoutLocale = trimmedPath.startsWith(`${locale}/`)
+  ? trimmedPath.slice(locale.length + 1)
+  : trimmedPath === locale
+    ? ""
+    : trimmedPath;
+
+const links = locales.map((targetLocale) => ({
+  locale: targetLocale as Locale,
+  url: pathWithoutLocale
+    ? getRelativeLocaleUrl(targetLocale, pathWithoutLocale)
+    : getRelativeLocaleUrl(targetLocale),
+}));
+---
+
+<div
+	class="language-switcher"
+	role="navigation"
+	aria-label={m.language_switcher_label({}, { locale })}
+>
+	{links.map(({ locale: linkLocale, url }) => (
+		<a
+			href={url}
+			class:list={["lang-link", { active: linkLocale === locale }]}
+		>
+			{linkLocale.toUpperCase()}
+		</a>
+	))}
+</div>
+
+<style>
+	.language-switcher {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		font-size: 0.85rem;
+	}
+	.lang-link {
+		text-decoration: none;
+		padding: 0.25rem 0.5rem;
+		border-radius: 4px;
+		border: 1px solid rgba(var(--gray), 0.3);
+		color: rgb(var(--gray-dark));
+		font-weight: 600;
+	}
+	.lang-link.active {
+		color: rgb(var(--accent));
+		border-color: rgba(var(--accent), 0.6);
+	}
+	@media (max-width: 720px) {
+		.language-switcher {
+			gap: 0.35rem;
+			font-size: 0.8rem;
+		}
+	}
+</style>

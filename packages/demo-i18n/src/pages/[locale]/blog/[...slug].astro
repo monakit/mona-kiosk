@@ -1,0 +1,28 @@
+---
+import { getEntry, render } from "astro:content";
+import BlogPost from "@/layouts/BlogPost.astro";
+import { type Locale } from "@/paraglide/runtime.js";
+
+const { slug } = Astro.params;
+if (!slug) return Astro.rewrite("/404");
+
+const locale = Astro.currentLocale as Locale | undefined;
+if (!locale) {
+  return Astro.rewrite("/404");
+}
+
+const post = await getEntry("blog", `${locale}/${slug}`);
+if (!post) return Astro.rewrite("/404");
+
+const { Content } = await render(post);
+---
+
+<BlogPost {...post.data}>
+  {
+    !Astro.locals.paywall?.hasAccess && Astro.locals.paywall?.preview ? (
+      <div set:html={Astro.locals.paywall.preview} />
+    ) : (
+      <Content />
+    )
+  }
+</BlogPost>
