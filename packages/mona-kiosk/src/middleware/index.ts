@@ -1,6 +1,7 @@
 import { getCollection, getEntry } from "astro:content";
 import { defineMiddleware } from "astro:middleware";
 import type { MiddlewareHandler } from "astro";
+import picomatch from "picomatch";
 import { ACCESS_COOKIE_OPTIONS, COOKIE_NAMES } from "../constants";
 import type {
   ResolvedCollectionConfig,
@@ -162,15 +163,13 @@ async function injectHtmlBeforeBodyClose(
   }
 }
 
-/**
- * Convert a glob-style URL pattern to a RegExp
- */
-function globToRegex(pattern: string): RegExp {
-  const regexPattern = pattern
-    .replace(/\*\*/g, "___DOUBLESTAR___")
-    .replace(/\*/g, "[^/]*")
-    .replace(/___DOUBLESTAR___/g, ".*");
-  return new RegExp(`^${regexPattern}/?$`);
+function normalizePath(value: string): string {
+  const stripped = value.replace(/\/+$/g, "");
+  return stripped || "/";
+}
+
+function matchesUrlPattern(pathname: string, pattern: string): boolean {
+  return picomatch.isMatch(normalizePath(pathname), normalizePath(pattern));
 }
 
 function shouldProcessUrl(
@@ -194,7 +193,7 @@ function shouldProcessUrl(
     group: c.group ? { index: c.group.index } : undefined,
   }));
   const urlPatterns = buildUrlPatterns(inputs, i18n);
-  return urlPatterns.some((pattern) => globToRegex(pattern).test(pathname));
+  return urlPatterns.some((pattern) => matchesUrlPattern(pathname, pattern));
 }
 
 /**
@@ -210,15 +209,15 @@ function findCollectionConfig(
   return configs.find((c) => {
     if (c.name !== collection) return false;
 
-    const regex = globToRegex(includePatternToUrlPattern(c.include));
-    if (regex.test(pathname)) {
+    const includePattern = includePatternToUrlPattern(c.include);
+    if (matchesUrlPattern(pathname, includePattern)) {
       return true;
     }
 
     // For group configs, check if pathname + "/" + group.index matches
     if (c.group) {
       const indexPathname = `${pathname.replace(/\/+$/, "")}/${c.group.index}`;
-      if (regex.test(indexPathname)) {
+      if (matchesUrlPattern(indexPathname, includePattern)) {
         return true;
       }
     }
