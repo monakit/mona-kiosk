@@ -1,6 +1,7 @@
 import { getEntry } from "astro:content";
 import { defineMiddleware } from "astro:middleware";
 import type { MiddlewareHandler } from "astro";
+import picomatch from "picomatch";
 import { COOKIE_NAMES } from "../constants";
 import type {
   ResolvedCollectionConfig,
@@ -123,15 +124,13 @@ async function injectHtmlBeforeBodyClose(
 /**
  * Check if URL matches a pattern
  */
-function matchesUrlPattern(pathname: string, pattern: string): boolean {
-  // Convert glob pattern to regex
-  const regexPattern = pattern
-    .replace(/\*\*/g, "___DOUBLESTAR___")
-    .replace(/\*/g, "[^/]*")
-    .replace(/___DOUBLESTAR___/g, ".*");
+function normalizePath(value: string): string {
+  const stripped = value.replace(/\/+$/g, "");
+  return stripped || "/";
+}
 
-  const regex = new RegExp(`^${regexPattern}/?$`);
-  return regex.test(pathname);
+function matchesUrlPattern(pathname: string, pattern: string): boolean {
+  return picomatch.isMatch(normalizePath(pathname), normalizePath(pattern));
 }
 
 /**

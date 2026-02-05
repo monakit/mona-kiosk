@@ -37,8 +37,9 @@
   "dependencies": {
     "@polar-sh/astro": "^0.7.3",
     "@polar-sh/sdk": "^0.42.2",
-    "gray-matter": "^4.0.3",
     "github-slugger": "^2.0.0",
+    "gray-matter": "^4.0.3",
+    "picomatch": "^4.0.3",
     "tinyglobby": "^0.2.15",
     "tsx": "^4.21.0"
   },
