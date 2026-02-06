@@ -21,7 +21,7 @@ See [full documentation](./packages/mona-kiosk/README.md) for setup instructions
 
 ## Support This Project
 
-Check out our live paywalled post: [MonaKiosk + BetterAuth Integration Guide](https://www.mymona.xyz/blogs/2025-11/astro-paywall-with-monakiosk)
+Check out our online course: [MonaKiosk in Action](https://www.mymona.xyz/courses/monakiosk-in-action).
 
 ## License
 
