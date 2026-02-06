@@ -1,0 +1,10 @@
+---
+import { getRelativeLocaleUrl } from "astro:i18n";
+import { baseLocale, type Locale } from "@/paraglide/runtime.js";
+
+const locale = (Astro.preferredLocale ?? baseLocale) as Locale;
+
+const redirectUrl = getRelativeLocaleUrl(locale, "blog");
+void redirectUrl;
+return Astro.redirect(redirectUrl);
+---

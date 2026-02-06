@@ -1,7 +1,10 @@
 /// <reference path="./env.d.ts" />
 
 export { COOKIE_NAMES, ROUTES } from "./constants";
-export type { MonaKioskConfig } from "./integration/config";
+export type {
+  GroupConfig,
+  MonaKioskConfig,
+} from "./integration/config";
 export { monaKiosk } from "./integration/index";
 export {
   clearSessionCookie,

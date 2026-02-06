@@ -33,6 +33,21 @@ export async function GET(context: APIContext) {
   // Get config
   const config = getGlobalConfig();
 
+  // Find collection config for this content to get group transform
+  const collectionName = contentId.split("/")[0];
+  const collectionConfig = config.collections.find(
+    (c) => c.name === collectionName,
+  );
+
+  // For group configs, strip /{group.index} suffix from content ID to build URL
+  let urlPath = contentId;
+  if (collectionConfig?.group) {
+    const suffix = `/${collectionConfig.group.index}`;
+    if (urlPath.endsWith(suffix)) {
+      urlPath = urlPath.slice(0, -suffix.length);
+    }
+  }
+
   // Get customer email from session if available
   const customerEmail = cookies.get(COOKIE_NAMES.CUSTOMER_EMAIL)?.value;
 
@@ -50,7 +65,7 @@ export async function GET(context: APIContext) {
     accessToken: config.polar.accessToken,
     successUrl: buildContentUrl({
       siteUrl: url.origin,
-      canonicalId: contentId,
+      canonicalId: urlPath,
       i18n: config.i18n,
     }),
     server: config.polar.server,

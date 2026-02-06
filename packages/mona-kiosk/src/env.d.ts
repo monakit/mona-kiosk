@@ -10,5 +10,3 @@ declare module "virtual:mona-kiosk-config" {
   const config: ResolvedMonaKioskConfig;
   export default config;
 }
-
-// export {};

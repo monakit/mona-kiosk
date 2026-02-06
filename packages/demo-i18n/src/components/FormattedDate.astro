@@ -1,0 +1,20 @@
+---
+import { baseLocale } from "@/paraglide/runtime.js";
+
+interface Props {
+  date: Date;
+}
+
+const { date } = Astro.props;
+const locale = Astro.currentLocale ?? baseLocale;
+---
+
+<time datetime={date.toISOString()}>
+	{
+		date.toLocaleDateString(locale, {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric',
+		})
+	}
+</time>

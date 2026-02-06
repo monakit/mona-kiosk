@@ -1,0 +1,39 @@
+---
+import Layout from "@/layouts/BlogPost.astro";
+import { m } from "@/paraglide/messages.js";
+import { baseLocale, type Locale } from "@/paraglide/runtime.js";
+
+const locale = (Astro.currentLocale ?? baseLocale) as Locale;
+Astro.response.status = 404;
+---
+
+<Layout
+  title={m.not_found_title({}, { locale })}
+  description={m.not_found_description({}, { locale })}
+  pubDate={new Date()}
+>
+  <section>
+    <h1>{m.not_found_heading({}, { locale })}</h1>
+    <p>{m.not_found_message({}, { locale })}</p>
+    <a href={`/${locale}/blog`}>{m.not_found_go_home({}, { locale })}</a>
+  </section>
+
+  <style>
+    section {
+      text-align: center;
+      padding: 4rem 2rem;
+    }
+    h1 {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+    p {
+      color: rgb(var(--gray));
+      margin-bottom: 2rem;
+    }
+    a {
+      color: rgb(var(--gray-dark));
+      text-decoration: underline;
+    }
+  </style>
+</Layout>

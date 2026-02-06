@@ -3,6 +3,7 @@ import { getEntry, render } from "astro:content";
 import BlogPost from "../../layouts/BlogPost.astro";
 
 const { slug } = Astro.params;
+if (!slug) return Astro.redirect("/404");
 const post = await getEntry("blog", slug);
 if (!post) return Astro.redirect("/404");
 
@@ -10,9 +11,11 @@ const { Content } = await render(post);
 ---
 
 <BlogPost {...post.data}>
-	{!Astro.locals.paywall?.hasAccess && Astro.locals.paywall?.preview ? (
-    <div set:html={Astro.locals.paywall.preview} />
-  ) : (
-    <Content />
-  )}
+  {
+    !Astro.locals.paywall?.hasAccess && Astro.locals.paywall?.preview ? (
+      <div set:html={Astro.locals.paywall.preview} />
+    ) : (
+      <Content />
+    )
+  }
 </BlogPost>

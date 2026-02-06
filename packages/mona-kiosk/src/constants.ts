@@ -5,6 +5,7 @@ export const COOKIE_NAMES = {
   SESSION: "mona_kiosk_session",
   CUSTOMER_ID: "mona_kiosk_customer_id",
   CUSTOMER_EMAIL: "mona_kiosk_customer_email",
+  ACCESS: "mona_kiosk_access",
 } as const;
 
 /**
@@ -32,3 +33,5 @@ export const SESSION_COOKIE_OPTIONS = {
   sameSite: "lax" as const,
   path: "/",
 } as const;
+
+export const ACCESS_COOKIE_OPTIONS = SESSION_COOKIE_OPTIONS;

@@ -1,21 +1,38 @@
-import { getEntry } from "astro:content";
+import { getCollection, getEntry } from "astro:content";
 import { defineMiddleware } from "astro:middleware";
 import type { MiddlewareHandler } from "astro";
 import picomatch from "picomatch";
-import { COOKIE_NAMES } from "../constants";
+import { ACCESS_COOKIE_OPTIONS, COOKIE_NAMES } from "../constants";
 import type {
   ResolvedCollectionConfig,
   ResolvedMonaKioskConfig,
 } from "../integration/config";
 import { getGlobalConfig } from "../integration/config";
+import {
+  type AccessCookiePayload,
+  decodeAccessCookie,
+  encodeAccessCookie,
+  getAccessCookieEntry,
+  upsertAccessCookie,
+} from "../lib/access-cookie";
 import { validateCustomerAccess } from "../lib/auth";
-import { entryToContentId } from "../lib/content-id";
+import {
+  buildIndexIdCandidates,
+  entryToContentId,
+  getGroupIndexIds,
+} from "../lib/content-id";
 import {
   type DownloadableFile,
   getDownloadableFiles,
 } from "../lib/downloadables";
 import { renderErrorHtml } from "../lib/error-renderer";
-import { buildUrlPatterns, parsePathname } from "../lib/i18n";
+import {
+  buildUrlPatterns,
+  includePatternToUrlPattern,
+  parsePathname,
+  stripLocalePrefix,
+  type UrlPatternInput,
+} from "../lib/i18n";
 import { findProductByContentId } from "../lib/polar-client";
 import {
   buildTemplateContext,
@@ -38,7 +55,9 @@ interface ContentInfo {
   entry: PayableEntry;
   collection: string;
   collectionConfig: ResolvedCollectionConfig;
-  body: string;
+  body?: string;
+  /** If this content inherits access from a group parent, this is the parent's content ID */
+  parentContentId?: string;
 }
 
 /**
@@ -64,8 +83,31 @@ async function buildPreview(params: {
   } = params;
 
   try {
+    const markdown = entry.body;
+    if (typeof markdown !== "string") {
+      if (!previewHandler) {
+        return undefined;
+      }
+
+      const previewContent = await previewHandler(entry);
+      if (!previewContent) {
+        return undefined;
+      }
+
+      const paywallTemplate = template ?? getDefaultPaywallTemplate();
+      const context = buildTemplateContext({
+        contentId,
+        collection,
+        entry,
+        preview: previewContent,
+        isAuthenticated,
+        signinPagePath,
+      });
+      return renderTemplate(paywallTemplate, context);
+    }
+
     // Get preview handler (custom or default)
-    const handler = previewHandler ?? getDefaultPreviewHandler(entry.body);
+    const handler = previewHandler ?? getDefaultPreviewHandler(markdown);
 
     // Generate preview content
     const previewContent = await handler(entry);
@@ -121,9 +163,6 @@ async function injectHtmlBeforeBodyClose(
   }
 }
 
-/**
- * Check if URL matches a pattern
- */
 function normalizePath(value: string): string {
   const stripped = value.replace(/\/+$/g, "");
   return stripped || "/";
@@ -133,13 +172,9 @@ function matchesUrlPattern(pathname: string, pattern: string): boolean {
   return picomatch.isMatch(normalizePath(pathname), normalizePath(pattern));
 }
 
-/**
- * Check if URL should be processed by paywall middleware
- * Only process URLs that match configured include patterns
- */
 function shouldProcessUrl(
   pathname: string,
-  includePatterns: string[],
+  collections: ResolvedCollectionConfig[],
   i18n?: ResolvedMonaKioskConfig["i18n"],
 ): boolean {
   // Skip API routes, assets, and other non-content paths
@@ -153,8 +188,216 @@ function shouldProcessUrl(
   }
 
   // Convert include patterns to URL patterns and check
-  const urlPatterns = buildUrlPatterns(includePatterns, i18n);
+  const inputs: UrlPatternInput[] = collections.map((c) => ({
+    include: c.include,
+    group: c.group ? { index: c.group.index } : undefined,
+  }));
+  const urlPatterns = buildUrlPatterns(inputs, i18n);
   return urlPatterns.some((pattern) => matchesUrlPattern(pathname, pattern));
+}
+
+/**
+ * Find the matching collection config for a given pathname and parsed info.
+ * For group configs, also matches stripped index URLs (e.g., /courses/x matches
+ * the pattern if /courses/x/{group.index} would match).
+ */
+function findCollectionConfig(
+  pathname: string,
+  collection: string,
+  configs: ResolvedCollectionConfig[],
+): ResolvedCollectionConfig | undefined {
+  return configs.find((c) => {
+    if (c.name !== collection) return false;
+
+    const includePattern = includePatternToUrlPattern(c.include);
+    if (matchesUrlPattern(pathname, includePattern)) {
+      return true;
+    }
+
+    // For group configs, check if pathname + "/" + group.index matches
+    if (c.group) {
+      const indexPathname = `${pathname.replace(/\/+$/, "")}/${c.group.index}`;
+      if (matchesUrlPattern(indexPathname, includePattern)) {
+        return true;
+      }
+    }
+
+    return false;
+  });
+}
+
+/**
+ * Handle group content routing (index entries and child entries).
+ *
+ * Cases:
+ * 1. Last slug segment === group.index -> index entry (e.g., /courses/x/toc)
+ * 2. Else, try slug + "/" + group.index as entry -> stripped index URL (e.g., /courses/x)
+ * 3. Otherwise -> child entry (e.g., /courses/x/01-basics)
+ */
+async function getGroupContentInfo(params: {
+  collectionConfig: ResolvedCollectionConfig;
+  collection: string;
+  slug: string;
+  localePath: string | null;
+  accessCookie: AccessCookiePayload | null;
+  now: number;
+}): Promise<ContentInfo | null> {
+  const { collectionConfig, collection, slug, localePath, accessCookie, now } =
+    params;
+  const group = collectionConfig.group;
+  if (!group) return null;
+
+  const astroCollection = collectionConfig.astroCollection;
+  const slugSegments = slug.split("/");
+  const lastSegment = slugSegments[slugSegments.length - 1];
+
+  // Case 1: Direct index URL (e.g., /courses/git-essentials/toc)
+  if (lastSegment === group.index) {
+    const entryKey = localePath ? `${localePath}/${slug}` : slug;
+    const entry = await getEntry(astroCollection, entryKey);
+    if (!entry) return null;
+
+    return buildIndexContentInfo({
+      entry,
+      collection,
+      collectionConfig,
+      accessCookie,
+      now,
+    });
+  }
+
+  // Case 2: Stripped index URL (e.g., /courses/git-essentials)
+  const childCollection = group.childCollection ?? astroCollection;
+
+  const indexIds = await getGroupIndexIds(
+    astroCollection,
+    group.index,
+    getCollection,
+  );
+  const indexCandidates = buildIndexIdCandidates({
+    localePath,
+    slug,
+    groupIndex: group.index,
+  });
+  const matchedIndexId = indexCandidates.find((id) => indexIds.has(id));
+  if (matchedIndexId) {
+    const indexEntry = await getEntry(astroCollection, matchedIndexId);
+    if (!indexEntry) return null;
+
+    // This is a stripped index URL — serve the index entry
+    return buildIndexContentInfo({
+      entry: indexEntry,
+      collection,
+      collectionConfig,
+      accessCookie,
+      now,
+    });
+  }
+
+  // Case 2: Child entry (e.g., /courses/git-essentials/01-basics)
+  const childEntryKey = localePath ? `${localePath}/${slug}` : slug;
+  const childEntry = await getEntry(childCollection, childEntryKey);
+
+  if (!childEntry) return null;
+
+  // Derive parent: all segments except last + group.index
+  const parentSlug = `${slugSegments.slice(0, -1).join("/")}/${group.index}`;
+  const parentEntryKey = localePath
+    ? `${localePath}/${parentSlug}`
+    : parentSlug;
+  const parentEntry = await getEntry(astroCollection, parentEntryKey);
+
+  if (!parentEntry) {
+    console.warn(
+      `[MonaKiosk] Parent entry not found for child: ${slug}. Expected parent at: ${parentSlug}`,
+    );
+    return null;
+  }
+
+  // Parent's content ID
+  const parentContentId = entryToContentId({
+    collection,
+    entryId: (parentEntry as { id: string }).id,
+    entrySlug: (parentEntry as { slug?: string }).slug,
+  });
+
+  const cachedAccess = getAccessCookieEntry({
+    payload: accessCookie,
+    contentId: parentContentId,
+    now,
+  });
+  const cachedProductId = cachedAccess?.productId ?? null;
+
+  const parentProductId =
+    cachedProductId ?? (await findProductByContentId(parentContentId));
+
+  if (!parentProductId) {
+    console.warn(
+      `[MonaKiosk] Parent product not found for: ${parentContentId}. Content will be treated as free.`,
+    );
+    return null;
+  }
+
+  return {
+    isPayable: true,
+    productId: parentProductId,
+    contentId: parentContentId,
+    entry: childEntry as PayableEntry,
+    collection,
+    collectionConfig,
+    body: (childEntry as { body: string }).body,
+    parentContentId,
+  };
+}
+
+/**
+ * Build ContentInfo for a group index entry (the pricing page).
+ */
+async function buildIndexContentInfo(params: {
+  entry: unknown;
+  collection: string;
+  collectionConfig: ResolvedCollectionConfig;
+  accessCookie: AccessCookiePayload | null;
+  now: number;
+}): Promise<ContentInfo | null> {
+  const { entry, collection, collectionConfig, accessCookie, now } = params;
+
+  if (!isPayableEntry(entry)) {
+    return null;
+  }
+
+  const canonicalId = entryToContentId({
+    collection,
+    entryId: (entry as { id: string }).id,
+    entrySlug: (entry as { slug?: string }).slug,
+  });
+
+  const cachedAccess = getAccessCookieEntry({
+    payload: accessCookie,
+    contentId: canonicalId,
+    now,
+  });
+  const cachedProductId = cachedAccess?.productId ?? null;
+
+  const productId =
+    cachedProductId ?? (await findProductByContentId(canonicalId));
+
+  if (!productId) {
+    console.error(
+      `[MonaKiosk] Product not found in Polar for content: ${canonicalId}. Make sure to run a build first to sync products.`,
+    );
+    return null;
+  }
+
+  return {
+    isPayable: true,
+    productId,
+    contentId: canonicalId,
+    entry,
+    collection,
+    collectionConfig,
+    body: entry.body,
+  };
 }
 
 /**
@@ -162,6 +405,8 @@ function shouldProcessUrl(
  */
 async function getContentInfoFromPath(
   pathname: string,
+  accessCookie: AccessCookiePayload | null,
+  now: number,
 ): Promise<ContentInfo | null> {
   const config = getGlobalConfig();
 
@@ -173,32 +418,57 @@ async function getContentInfoFromPath(
     return null;
   }
 
-  // Check if collection is configured as payable
-  const collectionConfig = config.collections.find(
-    (c) => c.name === collection,
+  // Find matching collection config (supports group stripped-index URLs)
+  const matchPathname = stripLocalePrefix(pathname, localePath);
+  const collectionConfig = findCollectionConfig(
+    matchPathname,
+    collection,
+    config.collections,
   );
   if (!collectionConfig) return null;
 
   try {
+    // Group config path
+    if (collectionConfig.group) {
+      return getGroupContentInfo({
+        collectionConfig,
+        collection,
+        slug,
+        localePath,
+        accessCookie,
+        now,
+      });
+    }
+
+    // Normal (non-group) flow
     const entryKey = localePath ? `${localePath}/${slug}` : slug;
-    const entry = (await getEntry(collection as never, entryKey)) as unknown;
+    const astroCollection = collectionConfig.astroCollection;
+    const entry = await getEntry(astroCollection, entryKey);
 
     if (!entry) return null;
-
-    // Check if content has price field (is payable)
-    if (!isPayableEntry(entry)) {
-      return null;
-    }
 
     // Generate canonical content ID (collection/slug)
     const canonicalId = entryToContentId({
       collection,
-      entryId: entry.id,
-      entrySlug: entry.slug,
+      entryId: (entry as { id: string }).id,
+      entrySlug: (entry as { slug?: string }).slug,
     });
 
+    // Normal flow: Check if content has price field (is payable)
+    if (!isPayableEntry(entry)) {
+      return null;
+    }
+
+    const cachedAccess = getAccessCookieEntry({
+      payload: accessCookie,
+      contentId: canonicalId,
+      now,
+    });
+    const cachedProductId = cachedAccess?.productId ?? null;
+
     // Query Polar to get product ID by content_id metadata
-    const productId = await findProductByContentId(canonicalId);
+    const productId =
+      cachedProductId ?? (await findProductByContentId(canonicalId));
 
     if (!productId) {
       console.error(
@@ -276,15 +546,28 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     }
 
     const { url, cookies, locals } = context;
-    const includePatterns = config.collections.map((c) => c.include);
 
     // Skip URLs that don't match configured include patterns
-    if (!shouldProcessUrl(url.pathname, includePatterns, config.i18n)) {
+    if (!shouldProcessUrl(url.pathname, config.collections, config.i18n)) {
       return next();
     }
 
+    const now = Math.floor(Date.now() / 1000);
+    const accessCookieSecret = config.accessCookieSecret;
+    const accessCookie = accessCookieSecret
+      ? decodeAccessCookie({
+          value: cookies.get(COOKIE_NAMES.ACCESS)?.value,
+          secret: accessCookieSecret,
+          now,
+        })
+      : null;
+
     // Check if current path is for payable content
-    const contentInfo = await getContentInfoFromPath(url.pathname);
+    const contentInfo = await getContentInfoFromPath(
+      url.pathname,
+      accessCookie,
+      now,
+    );
 
     // If not payable content, continue normally
     if (!contentInfo || !contentInfo.isPayable) {
@@ -330,8 +613,17 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
       }
     }
 
+    const accessCookieEntry = getAccessCookieEntry({
+      payload: accessCookie,
+      contentId: contentInfo.contentId,
+      now,
+    });
+    const hasCookieAccess = !!accessCookieEntry;
+
     // Check authentication
-    if (config.isAuthenticated) {
+    if (hasCookieAccess) {
+      isAuthenticated = true;
+    } else if (config.isAuthenticated) {
       // Use custom auth check
       isAuthenticated = await config.isAuthenticated(context);
     } else {
@@ -340,7 +632,9 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     }
 
     // Check access (only if authenticated)
-    if (isAuthenticated && customerToken && customerId) {
+    if (hasCookieAccess) {
+      hasAccess = true;
+    } else if (isAuthenticated && customerToken && customerId) {
       if (config.checkAccess) {
         // Use custom access check
         hasAccess = await config.checkAccess(context, contentInfo.contentId);
@@ -353,9 +647,30 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
       }
     }
 
+    if (accessCookieSecret && hasAccess) {
+      const nextPayload = upsertAccessCookie({
+        payload: accessCookie,
+        contentId: contentInfo.contentId,
+        productId: contentInfo.productId,
+        now,
+        ttlSeconds: config.accessCookieTtlSeconds,
+        maxEntries: config.accessCookieMaxEntries,
+      });
+      const value = encodeAccessCookie({
+        payload: nextPayload,
+        secret: accessCookieSecret,
+      });
+      cookies.set(COOKIE_NAMES.ACCESS, value, {
+        ...ACCESS_COOKIE_OPTIONS,
+        expires: new Date(nextPayload.exp * 1000),
+      });
+    }
+
     // Only generate preview if user doesn't have access
+    // Skip preview for group child content (child content doesn't have its own preview)
     let preview: string | undefined;
-    if (!hasAccess) {
+    const isGroupChild = !!contentInfo.parentContentId;
+    if (!hasAccess && !isGroupChild) {
       preview = await buildPreview({
         collection: contentInfo.collection,
         entry: contentInfo.entry,
@@ -368,16 +683,22 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     }
 
     // Set paywall state in locals for page to access
+    // For group child content, use parent's info (no price/interval on child)
     const interval =
-      "interval" in contentInfo.entry.data
+      !isGroupChild && "interval" in contentInfo.entry.data
         ? contentInfo.entry.data.interval
         : undefined;
 
-    const hasDownloads = !!(
-      contentInfo.entry.data.downloads &&
-      contentInfo.entry.data.downloads.length > 0
-    );
-    const downloadCount = contentInfo.entry.data.downloads?.length || 0;
+    // For group child content, downloads are on parent, not child
+    const hasDownloads =
+      !isGroupChild &&
+      !!(
+        contentInfo.entry.data.downloads &&
+        contentInfo.entry.data.downloads.length > 0
+      );
+    const downloadCount = isGroupChild
+      ? 0
+      : contentInfo.entry.data.downloads?.length || 0;
 
     // Fetch downloadable files if user has access
     let downloadableFiles: DownloadableFile[] | undefined;
@@ -407,8 +728,9 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
       hasAccess,
       productId: contentInfo.productId,
       contentId: contentInfo.contentId,
-      price: contentInfo.entry.data.price,
-      currency: contentInfo.entry.data.currency,
+      // For group child content, price is on parent, not child
+      price: isGroupChild ? undefined : contentInfo.entry.data.price,
+      currency: isGroupChild ? undefined : contentInfo.entry.data.currency,
       interval,
       title: contentInfo.entry.data.title,
       description: contentInfo.entry.data.description,

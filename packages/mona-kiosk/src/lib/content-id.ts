@@ -126,3 +126,43 @@ export function generateContentIdCandidates(contentId: string): string[] {
 
   return Array.from(candidates);
 }
+
+export function buildIndexIdCandidates(params: {
+  localePath: string | null;
+  slug: string;
+  groupIndex: string;
+}): string[] {
+  const { localePath, slug, groupIndex } = params;
+  const indexSlug = `${slug}/${groupIndex}`;
+  if (!localePath) {
+    return [indexSlug];
+  }
+  return [`${localePath}/${indexSlug}`];
+}
+
+export type CollectionEntryLike = { id: string };
+
+const groupIndexCache = new Map<string, Set<string>>();
+
+export async function getGroupIndexIds(
+  astroCollection: string,
+  groupIndex: string,
+  getCollection: (collection: string) => Promise<CollectionEntryLike[]>,
+): Promise<Set<string>> {
+  const cacheKey = `${astroCollection}:${groupIndex}`;
+  const cached = groupIndexCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const entries = await getCollection(astroCollection);
+  const suffix = `/${groupIndex}`;
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    if (entry.id.endsWith(suffix)) {
+      ids.add(entry.id);
+    }
+  }
+  groupIndexCache.set(cacheKey, ids);
+  return ids;
+}

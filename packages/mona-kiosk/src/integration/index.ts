@@ -47,7 +47,7 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
                       ? cfg.checkAccess.toString()
                       : "undefined";
 
-                    // Serialize preview handlers per collection
+                    // Serialize preview handlers and group config per collection
                     const collectionsCode = cfg.collections
                       .map((c) => {
                         const previewFn = c.previewHandler
@@ -58,7 +58,9 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
                       name: ${JSON.stringify(c.name)},
                       include: ${JSON.stringify(c.include)},
                       paywallTemplate: ${JSON.stringify(c.paywallTemplate)},
-                      previewHandler: ${previewFn}
+                      previewHandler: ${previewFn},
+                      astroCollection: ${JSON.stringify(c.astroCollection)},
+                      group: ${JSON.stringify(c.group)}
                     }`;
                       })
                       .join(",\n");
@@ -70,6 +72,10 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
                       collections: [${collectionsCode}],
                       productNameTemplate: ${JSON.stringify(cfg.productNameTemplate)},
                       signinPagePath: ${JSON.stringify(cfg.signinPagePath)},
+                      siteUrl: ${JSON.stringify(cfg.siteUrl)},
+                      accessCookieSecret: ${JSON.stringify(cfg.accessCookieSecret)},
+                      accessCookieTtlSeconds: ${JSON.stringify(cfg.accessCookieTtlSeconds)},
+                      accessCookieMaxEntries: ${JSON.stringify(cfg.accessCookieMaxEntries)},
                       i18n: ${JSON.stringify(cfg.i18n)},
                       isAuthenticated: ${isAuthFn},
                       checkAccess: ${checkAccessFn},
@@ -108,7 +114,7 @@ export function monaKiosk(config: MonaKioskConfig): AstroIntegration {
 
         addMiddleware({
           entrypoint: "mona-kiosk/middleware",
-          order: "pre",
+          order: config.middlewareOrder ?? "pre",
         });
 
         logger.info("✅ MonaKiosk middleware enabled");

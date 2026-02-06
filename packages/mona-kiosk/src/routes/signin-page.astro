@@ -23,7 +23,10 @@ const signinEndpoint = ROUTES.AUTH_SIGNIN;
         box-sizing: border-box;
       }
       body {
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
         background: #f9fafb;
         display: flex;
         align-items: center;
@@ -140,7 +143,11 @@ const signinEndpoint = ROUTES.AUTH_SIGNIN;
     <div class="container">
       <h1>Sign In</h1>
       <p>Enter your email to access your purchased content.</p>
-      <p style="background: #fee; border: 2px solid #c00; padding: 1rem; border-radius: 8px; color: #c00;">⚠️ Note: This page is not secure. Use it only in sandbox mode!!!</p>
+      <p
+        style="background: #fee; border: 2px solid #c00; padding: 1rem; border-radius: 8px; color: #c00;"
+      >
+        ⚠️ Note: This page is not secure. Use it only in sandbox mode!!!
+      </p>
 
       <form id="signin-form">
         <div>
@@ -155,21 +162,19 @@ const signinEndpoint = ROUTES.AUTH_SIGNIN;
           />
         </div>
 
-        <button type="submit" id="submit-btn">
-          Sign In
-        </button>
+        <button type="submit" id="submit-btn"> Sign In </button>
 
         <div id="error" class="error"></div>
       </form>
     </div>
 
     <script is:inline define:vars={{ returnUrl, signinEndpoint }}>
-      const form = document.getElementById('signin-form');
-      const emailInput = document.getElementById('email');
-      const submitBtn = document.getElementById('submit-btn');
-      const errorDiv = document.getElementById('error');
+      const form = document.getElementById("signin-form");
+      const emailInput = document.getElementById("email");
+      const submitBtn = document.getElementById("submit-btn");
+      const errorDiv = document.getElementById("error");
 
-      form.addEventListener('submit', async (e) => {
+      form.addEventListener("submit", async (e) => {
         e.preventDefault();
 
         const email = emailInput.value.trim();
@@ -177,14 +182,14 @@ const signinEndpoint = ROUTES.AUTH_SIGNIN;
 
         // Disable form
         submitBtn.disabled = true;
-        submitBtn.textContent = 'Signing in...';
-        errorDiv.classList.remove('show');
+        submitBtn.textContent = "Signing in...";
+        errorDiv.classList.remove("show");
 
         try {
           const response = await fetch(signinEndpoint, {
-            method: 'POST',
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json',
+              "Content-Type": "application/json",
             },
             body: JSON.stringify({ email }),
           });
@@ -196,16 +201,17 @@ const signinEndpoint = ROUTES.AUTH_SIGNIN;
             window.location.href = returnUrl;
           } else {
             // Show error
-            errorDiv.textContent = data.error || 'Failed to sign in. Please try again.';
-            errorDiv.classList.add('show');
+            errorDiv.textContent =
+              data.error || "Failed to sign in. Please try again.";
+            errorDiv.classList.add("show");
             submitBtn.disabled = false;
-            submitBtn.textContent = 'Sign In';
+            submitBtn.textContent = "Sign In";
           }
         } catch (error) {
-          errorDiv.textContent = 'Network error. Please check your connection.';
-          errorDiv.classList.add('show');
+          errorDiv.textContent = "Network error. Please check your connection.";
+          errorDiv.classList.add("show");
           submitBtn.disabled = false;
-          submitBtn.textContent = 'Sign In';
+          submitBtn.textContent = "Sign In";
         }
       });
     </script>

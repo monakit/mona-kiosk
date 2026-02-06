@@ -66,7 +66,12 @@ export function resolveI18nConfig(
   };
 }
 
-function includePatternToUrlPattern(includePattern: string): string {
+export interface UrlPatternInput {
+  include: string;
+  group?: { index: string };
+}
+
+export function includePatternToUrlPattern(includePattern: string): string {
   return (
     includePattern
       .replace(/\\/g, "/")
@@ -78,11 +83,35 @@ function includePatternToUrlPattern(includePattern: string): string {
   );
 }
 
+/**
+ * Strip the last /* segment from a URL pattern.
+ * e.g., "/courses/**\/*" -> "/courses/**"
+ */
+function stripLastWildcardSegment(pattern: string): string | null {
+  const lastSlash = pattern.lastIndexOf("/");
+  if (lastSlash <= 0) return null;
+  return pattern.slice(0, lastSlash);
+}
+
 export function buildUrlPatterns(
-  includePatterns: string[],
+  inputs: UrlPatternInput[],
   i18n?: ResolvedI18nConfig | null,
 ): string[] {
-  const basePatterns = includePatterns.map(includePatternToUrlPattern);
+  const basePatterns: string[] = [];
+
+  for (const input of inputs) {
+    const pattern = includePatternToUrlPattern(input.include);
+    basePatterns.push(pattern);
+
+    // For group configs, also emit a pattern with the last /* segment removed
+    // so stripped index URLs like /courses/git-essentials match
+    if (input.group) {
+      const stripped = stripLastWildcardSegment(pattern);
+      if (stripped) {
+        basePatterns.push(stripped);
+      }
+    }
+  }
 
   if (!i18n) {
     return basePatterns;
@@ -152,6 +181,19 @@ export function parsePathname(
     collection: segments[0],
     slug: segments.slice(1).join("/"),
   };
+}
+
+export function stripLocalePrefix(
+  pathname: string,
+  localePath: string | null,
+): string {
+  if (!localePath) return pathname;
+  const prefix = `/${localePath}`;
+  if (pathname === prefix) return "/";
+  if (pathname.startsWith(`${prefix}/`)) {
+    return pathname.slice(prefix.length) || "/";
+  }
+  return pathname;
 }
 
 export function buildContentUrl(params: {

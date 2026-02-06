@@ -9,11 +9,36 @@ export interface PolarConfig {
   server: "production" | "sandbox";
 }
 
+/**
+ * Configuration for grouped content (e.g., courses with chapters).
+ * A single collection config handles both the index entry (pricing page)
+ * and child entries (chapters that inherit access from the index).
+ */
+export interface GroupConfig {
+  /** Filename stem of the pricing/index entry (e.g., "toc") */
+  index: string;
+  /** Astro collection name for child entries (optional) */
+  childCollection?: string;
+}
+
 export interface CollectionConfig {
   include: string;
   paywallTemplate?: string;
   downloadableTemplate?: string;
   previewHandler?: PreviewHandler;
+  /**
+   * The Astro collection name to load entries from.
+   * Useful when the URL path doesn't match the Astro collection name
+   * (e.g., URL is /courses/... but Astro collection is "courseChapters").
+   * If not specified, uses the collection name inferred from the include pattern.
+   */
+  astroCollection?: string;
+  /**
+   * Configuration for grouped content (e.g., courses with chapters).
+   * When set, the index entry (matching group.index filename) is the pricing entry,
+   * and all other entries inherit access from their parent index.
+   */
+  group?: GroupConfig;
 }
 
 export interface MonaKioskConfig {
@@ -21,7 +46,11 @@ export interface MonaKioskConfig {
   collections: CollectionConfig[];
   productNameTemplate?: string;
   signinPagePath?: string;
+  middlewareOrder?: "pre" | "post";
   siteUrl: string;
+  accessCookieSecret?: string;
+  accessCookieTtlSeconds?: number;
+  accessCookieMaxEntries?: number;
   isAuthenticated?: (context: APIContext) => boolean | Promise<boolean>;
   checkAccess?: (
     context: APIContext,
@@ -29,9 +58,12 @@ export interface MonaKioskConfig {
   ) => boolean | Promise<boolean>;
 }
 
-export type ResolvedCollectionConfig = CollectionConfig & {
+export type ResolvedCollectionConfig = Omit<CollectionConfig, never> & {
   name: string;
   include: string;
+  /** The Astro collection to load entries from (defaults to name if not specified) */
+  astroCollection: string;
+  group?: GroupConfig;
 };
 
 export type ResolvedMonaKioskConfig = Omit<
@@ -41,6 +73,9 @@ export type ResolvedMonaKioskConfig = Omit<
   collections: ResolvedCollectionConfig[];
   signinPagePath: string;
   siteUrl: string;
+  accessCookieSecret?: string;
+  accessCookieTtlSeconds: number;
+  accessCookieMaxEntries: number;
   i18n?: ResolvedI18nConfig | null;
 };
 
@@ -89,6 +124,7 @@ function resolveCollectionConfig(
     ...collection,
     name: inferredName,
     include: collection.include,
+    astroCollection: collection.astroCollection ?? inferredName,
   };
 }
 
@@ -96,11 +132,20 @@ function resolveConfig(
   input: MonaKioskConfig,
   options?: { astroI18n?: AstroConfig["i18n"] },
 ): ResolvedMonaKioskConfig {
+  if (!input.accessCookieSecret) {
+    throw new Error(
+      "MonaKiosk accessCookieSecret is required to enable access cookie caching.",
+    );
+  }
+
   return {
     ...input,
     collections: input.collections.map(resolveCollectionConfig),
     signinPagePath: input.signinPagePath ?? "/mona-kiosk/signin",
     siteUrl: input.siteUrl,
+    accessCookieSecret: input.accessCookieSecret,
+    accessCookieTtlSeconds: input.accessCookieTtlSeconds ?? 60 * 30,
+    accessCookieMaxEntries: input.accessCookieMaxEntries ?? 20,
     i18n: resolveI18nConfig(options?.astroI18n),
   };
 }
