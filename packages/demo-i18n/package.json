@@ -12,19 +12,19 @@
     "format": "biome format --write"
   },
   "dependencies": {
-    "@astrojs/mdx": "^4.3.13",
-    "@astrojs/rss": "^4.0.15",
-    "@astrojs/sitemap": "^3.7.0",
-    "astro": "^5.17.1",
+    "@astrojs/mdx": "^5.0.6",
+    "@astrojs/rss": "^4.0.18",
+    "@astrojs/sitemap": "^3.7.2",
+    "astro": "^6.3.3",
     "mona-kiosk": "link:../mona-kiosk",
     "sharp": "^0.34.5"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.6",
-    "@astrojs/node": "^9.5.2",
-    "@biomejs/biome": "^2.3.13",
-    "@inlang/paraglide-js": "^2.10.0",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "@astrojs/check": "^0.9.9",
+    "@astrojs/node": "^10.1.1",
+    "@biomejs/biome": "^2.4.15",
+    "@inlang/paraglide-js": "^2.18.0",
+    "typescript": "^6.0.3",
+    "vite": "^7.3.3"
   }
 }

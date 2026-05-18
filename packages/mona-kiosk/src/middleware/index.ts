@@ -570,7 +570,7 @@ export const onRequest: MiddlewareHandler = defineMiddleware(
     );
 
     // If not payable content, continue normally
-    if (!contentInfo || !contentInfo.isPayable) {
+    if (!contentInfo?.isPayable) {
       return next();
     }
 

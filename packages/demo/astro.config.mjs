@@ -14,7 +14,7 @@ const {
   POLAR_SERVER,
   ACCESS_COOKIE_SECRET,
   SITE_URL,
-} = loadEnv(process.env.NODE_ENV, process.cwd(), "");
+} = loadEnv(process.env.NODE_ENV || "development", process.cwd(), "");
 
 // https://astro.build/config
 export default defineConfig({
@@ -33,7 +33,7 @@ export default defineConfig({
         accessToken: POLAR_ACCESS_TOKEN,
         organizationSlug: ORGANIZATION_SLUG,
         organizationId: ORGANIZATION_ID,
-        server: POLAR_SERVER || "sandbox",
+        server: POLAR_SERVER === "production" ? "production" : "sandbox",
       },
       collections: [
         {

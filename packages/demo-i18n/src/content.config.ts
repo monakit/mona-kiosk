@@ -1,5 +1,6 @@
-import { defineCollection, z } from "astro:content";
+import { defineCollection } from "astro:content";
 import { glob } from "astro/loaders";
+import { z } from "astro/zod";
 import { PayableMetadata } from "mona-kiosk";
 
 const chapterRef = z.object({
@@ -27,7 +28,7 @@ const blog = defineCollection({
         updatedDate: z.coerce.date().optional(),
         heroImage: image().optional(),
       })
-      .merge(PayableMetadata),
+      .extend(PayableMetadata.shape),
 });
 
 const courses = defineCollection({
@@ -45,7 +46,7 @@ const courses = defineCollection({
       updatedDate: z.coerce.date().optional(),
       structure: z.array(z.union([chapterRef, partDef])),
     })
-    .merge(PayableMetadata),
+    .extend(PayableMetadata.shape),
 });
 
 const courseChapters = defineCollection({
